@@ -1,0 +1,190 @@
+# ============================================================
+# GITHUB ACTIONS — GENERATION PLANNING HEBDOMADAIRE
+#
+# Triggers :
+#   - Chaque dimanche a 14h00 UTC (15h00 Paris heure ete)
+#   - Manuellement depuis GitHub (workflow_dispatch)
+#
+# Branche cible : main
+# ============================================================
+
+name: Generation Planning Hebdomadaire
+
+on:
+  # Cron : chaque dimanche a 14h00 UTC = 15h00 Paris (heure ete)
+  # En hiver (UTC+1) : changer a 13:00 UTC
+  schedule:
+    - cron: "0 14 * * 0"
+
+  # Lancement manuel depuis GitHub Actions
+  workflow_dispatch:
+    inputs:
+      mode_simulation:
+        description: "Mode simulation (calcule sans ecrire dans Excel)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+jobs:
+  generer_planning:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+
+      # ----------------------------------------------------------
+      # 1. Checkout branche main
+      # ----------------------------------------------------------
+      - name: Checkout branche main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      # ----------------------------------------------------------
+      # 2. Installation Python 3.11
+      # ----------------------------------------------------------
+      - name: Installation Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      # ----------------------------------------------------------
+      # 3. Installation des dependances
+      # ----------------------------------------------------------
+      - name: Installation des dependances
+        run: |
+          pip install --upgrade pip
+          pip install \
+            pandas \
+            numpy \
+            openpyxl \
+            pulp \
+            requests \
+            xlrd
+
+      # ----------------------------------------------------------
+      # 4. Configuration des secrets
+      # A configurer dans GitHub :
+      #   Settings -> Secrets -> Actions -> New repository secret
+      #   SPOONACULAR_KEY = votre_cle_api
+      # ----------------------------------------------------------
+      - name: Configuration des secrets
+        run: |
+          echo "SPOONACULAR_KEY=${{ secrets.SPOONACULAR_KEY }}" >> $GITHUB_ENV
+          echo "PYTHONPATH=${{ github.workspace }}"             >> $GITHUB_ENV
+
+      # ----------------------------------------------------------
+      # 5. Verification et creation des bases de donnees
+      # ----------------------------------------------------------
+      - name: Verification base nutritionnelle
+        run: |
+          if [ ! -f "create_db/data/nutrition.db" ]; then
+            echo "[INFO] nutrition.db absent — creation en cours..."
+            python create_db/main.py
+          else
+            echo "[OK] nutrition.db present"
+          fi
+
+      - name: Verification base recettes
+        run: |
+          if [ ! -f "create_db/data/recettes.db" ]; then
+            echo "[INFO] recettes.db absent — import Spoonacular..."
+            python create_db/recettes/main_recettes.py || \
+              echo "[WARN] Import Spoonacular echoue — recettes.db vide"
+          else
+            echo "[OK] recettes.db present"
+          fi
+
+      - name: Verification config athlete
+        run: |
+          if [ ! -f "optimisation/data/athlete_config.xlsx" ]; then
+            echo "[ERREUR] athlete_config.xlsx introuvable"
+            echo "Ce fichier doit etre present dans le depot."
+            exit 1
+          else
+            echo "[OK] athlete_config.xlsx present"
+          fi
+
+      # ----------------------------------------------------------
+      # 6. Generation du planning hebdomadaire
+      # ----------------------------------------------------------
+      - name: Generation du planning
+        run: |
+          python scripts/run_weekly.py
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+
+      # ----------------------------------------------------------
+      # 7. Commit et push des resultats sur main
+      # ----------------------------------------------------------
+      - name: Commit et push des resultats
+        run: |
+          git config --global user.name  "GitHub Actions Bot"
+          git config --global user.email "actions@github.com"
+
+          # Ajouter les fichiers modifies
+          git add optimisation/data/athlete_config.xlsx
+          git add create_db/data/nutrition.db   || true
+          git add create_db/data/recettes.db    || true
+          git add logs/                          || true
+
+          # Commiter uniquement si des changements existent
+          if git diff --staged --quiet; then
+            echo "[INFO] Aucun changement detecte — pas de commit"
+          else
+            DATE=$(date +'%d/%m/%Y %H:%M')
+            SEMAINE=$(date +'%V')
+            git commit -m "Planning semaine ${SEMAINE} — ${DATE}"
+            git push origin main
+            echo "[OK] Resultats commites sur main"
+          fi
+
+      # ----------------------------------------------------------
+      # 8. Upload des artefacts (logs + Excel)
+      # Disponibles dans l onglet Actions de GitHub
+      # pendant 30 jours
+      # ----------------------------------------------------------
+      - name: Upload artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: planning-${{ github.run_number }}
+          path: |
+            optimisation/data/athlete_config.xlsx
+            logs/
+          retention-days: 30
+
+      # ----------------------------------------------------------
+      # 9. Rapport de fin d execution
+      # ----------------------------------------------------------
+      - name: Rapport execution
+        if: always()
+        run: |
+          echo "=================================================="
+          echo "  RAPPORT EXECUTION GITHUB ACTIONS"
+          echo "=================================================="
+          echo "  Workflow  : ${{ github.workflow }}"
+          echo "  Run       : ${{ github.run_number }}"
+          echo "  Branche   : ${{ github.ref_name }}"
+          echo "  Declenche : ${{ github.event_name }}"
+          echo "  Date      : $(date +'%d/%m/%Y %H:%M UTC')"
+          echo "=================================================="
+
+      # ----------------------------------------------------------
+      # 10. Notification en cas d echec
+      # ----------------------------------------------------------
+      - name: Notification echec
+        if: failure()
+        run: |
+          echo "=================================================="
+          echo "  ECHEC DE LA GENERATION DU PLANNING"
+          echo "=================================================="
+          echo "  Verifiez les logs dans l onglet Actions"
+          echo "  https://github.com/${{ github.repository }}/actions"
+          echo "=================================================="
