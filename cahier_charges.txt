@@ -1,0 +1,288 @@
+CAHIER DES CHARGES COMPLET - SYSTÈME  DE NUTRITION SPORTIVE OPTIMISÉE
+
+1. OBJECTIF GLOBAL
+
+Développer un système intelligent de nutrition sportive orienté performance et optimisation économique, initialement appliqué à un athlète de saut à la perche en reprise après blessure, avec les objectifs suivants :
+réduction de poids de 80 kg vers 72–73 kg
+maintien maximal de la masse musculaire
+optimisation de la performance sportive
+adaptation fine à la charge d’entraînement
+réduction du coût alimentaire
+minimisation des compléments alimentaires
+génération automatique de 21 repas hebdomadaires optimisés
+suivi dynamique du poids et des performances
+Le système doit être conçu comme une plateforme générique de nutrition sportive paramétrable pour tout athlète.
+
+
+2. ARCHITECTURE GLOBALE DU SYSTÈME
+
+
+Le système est composé de 7 modules principaux.
+
+2.1 BASE DE DONNÉES ALIMENTAIRE
+
+Chaque aliment contient :
+nom
+calories pour 100g
+protéines, glucides, lipides
+fibres
+micronutriments (optionnel)
+digestibilité (low / medium / high)
+coût moyen par kg
+densité protéique
+score nutritionnel global
+Sources :
+Open Food Facts
+USDA FoodData Central
+CIQUAL (ANSES)
+
+2.2 BASE DE DONNÉES PRIX DYNAMIQUE
+
+Table mise à jour automatiquement :
+aliment_id
+magasin (Carrefour, Leclerc, etc.)
+prix actuel
+historique des prix
+date de mise à jour
+indicateur promotionnel
+Détection des promotions
+promo_score = (prix_moyen - prix_actuel) / prix_moyen
+Permet :
+détection des opportunités d’achat
+optimisation du budget alimentaire
+priorisation dynamique des aliments
+
+2.3 PROFIL ATHLÈTE GÉNÉRIQUE
+
+Le système doit être utilisable par n’importe quel athlète.
+Chaque profil contient :
+âge
+sexe
+taille
+poids actuel
+poids cible
+composition corporelle (optionnel)
+sport pratiqué
+niveau (amateur, semi-pro, élite)
+fréquence d’entraînement
+objectifs (performance, perte de poids, prise de masse, santé)
+contraintes alimentaires
+préférences alimentaires
+contraintes digestives
+
+2.3 BIS — CAS UTILISATEUR ACTUEL (NON CODÉ EN DUR)
+
+Cas actuel :
+saut à la perche
+reprise après trauma crânien
+objectif de recomposition corporelle
+Contraintes spécifiques :
+récupération physique et neurologique
+progression calorique contrôlée
+gestion stricte de la fatigue
+retour progressif à la performance
+Ce cas doit être traité uniquement comme une configuration dans Excel, jamais codé dans le moteur.
+
+2.3 TER — MODULE STRUCTURATION DES SÉANCES
+
+Le système doit intégrer une séparation explicite des types de séances :
+Types de séances :
+Musculation
+force / hypertrophie
+protéines élevées constantes
+glucides post-séance
+récupération musculaire prioritaire
+Sprint / explosivité
+puissance et vitesse
+glucides élevés autour de la séance
+faible charge digestive avant effort
+récupération nerveuse prioritaire
+Technique (spécifique saut à la perche)
+coordination et apprentissage moteur
+alimentation stable
+digestion légère
+maintien énergétique
+Résistance
+endurance et fatigue prolongée
+glucides élevés
+hydratation prioritaire
+recharge glycogène
+Impact nutritionnel
+Chaque séance influence :
+calories journalières
+macros
+timing des repas
+digestibilité des aliments
+Planning hebdomadaire
+Exemple :
+JourSéanceIntensitéLundiMusculationhauteMardiTechnique
+hauteMercrediMusculation & sprint
+HauteJeudiReposfaibleVendrediMusculation & pliometrie
+Haute
+
+2.4 MOTEUR D’OPTIMISATION
+
+Objectif
+Générer 21 repas hebdomadaires optimisés selon :
+calories exactes
+macros optimisés performance
+budget minimal
+performance maximale
+diversité alimentaire
+digestion optimisée
+contraintes utilisateur
+type de séance
+Fonction objectif
+minimiser :
+    coût total
+  + répétition alimentaire
+  - score nutrition-performance
+  - score promotionnel
+Contraintes
+calories = cible dynamique
+protéines ≥ seuil sportif
+lipides ≥ minimum hormonal
+glucides périodisés selon entraînement
+budget ≤ limite définie
+aliments autorisés uniquement
+
+2.5 SCORE ALIMENTAIRE
+
+Chaque aliment reçoit un score :
+score =
+    (protéines + densité micronutriments + digestibilité adaptée sport)
+    - coût
+    + avantage promotionnel
+
+2.6 MODULE PANIER HEBDOMADAIRE
+
+Génère automatiquement :
+21 repas structurés
+liste de courses optimisée
+coût total minimal
+exploitation des promotions
+équilibre nutritionnel global
+
+2.7 MODULE DYNAMIQUE D’ADAPTATION
+
+Chaque semaine :
+mise à jour des prix alimentaires
+recalcul des optimisations
+ajustement des calories selon poids réel
+adaptation aux performances et à la charge d’entraînement
+
+2.8 MODULE DE PARAMÉTRABILITÉ (CRITIQUE)
+
+Principe fondamental
+Aucune donnée utilisateur ne doit être codée en dur dans le système Python.
+Toutes les variables doivent être configurables dans Excel :
+Profil athlète
+poids
+taille
+âge
+sexe
+sport
+objectifs
+Entraînement
+type de séance
+planning hebdomadaire
+intensité
+fréquence
+Nutrition
+calories cibles
+ratios macros
+contraintes digestives
+aliments interdits
+Budget
+budget quotidien / hebdomadaire
+Rôle des composants
+Excel
+interface utilisateur
+configuration du système
+saisie des données
+affichage des résultats
+Python
+moteur d’optimisation générique
+lecture des données Excel
+génération des repas
+aucun hardcoding utilisateur
+
+
+3. PAGE SOURCES SCIENTIFIQUES
+
+
+Objectif
+Centraliser toutes les sources scientifiques utilisées pour justifier les règles du système.
+Domaines couverts
+Nutrition sportive
+ISSN Position Stands
+ACSM guidelines
+Morton et al.
+Areta et al.
+Métabolisme
+Hall et al.
+Westerterp
+Loucks et al.
+Performance et digestion
+Jeukendrup
+Burke et al.
+IOC Consensus Statements
+Optimisation
+OR-Tools (Google)
+Winston / Hillier / Lieberman
+littérature diet optimization
+Bases alimentaires
+Open Food Facts
+USDA FoodData Central
+CIQUAL (ANSES)
+Récupération
+ISSN recovery
+oméga-3 et inflammation
+vitamine D et performance
+Rôle
+justification des décisions du système
+traçabilité scientifique
+amélioration continue
+base d’évolution du modèle
+
+
+4. STACK TECHNIQUE
+
+
+Python
+pandas
+numpy
+PuLP ou OR-Tools
+Base de données
+SQLite (prototype)
+PostgreSQL (production)
+Automatisation
+cron
+Airflow (option avancée)
+
+
+5. OUTPUT FINAL DU SYSTÈME (EXCEL)
+
+
+Chaque semaine :
+21 repas optimisés
+liste de courses complète
+budget total alimentaire
+macros détaillées
+adaptation aux séances
+analyse nutritionnelle complète
+optimisation coût / performance
+suivi du poids et ajustements
+
+
+6. DÉFINITION GLOBALE
+
+
+Système de nutrition sportive automatisé basé sur :
+optimisation mathématique multi-objectifs
+données alimentaires structurées
+prix dynamiques
+profil athlète générique
+planning d’entraînement structuré
+paramétrabilité totale via Excel
+validation scientifique

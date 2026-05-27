@@ -1,0 +1,298 @@
+📋 CAHIER DES CHARGES — SYSTÈME  DE NUTRITION SPORTIVE OPTIMISÉE
+
+Document de référence technique et fonctionnel Version : 1.0 | Date : 26 mai 2026 Cas utilisateur initial : Athlète saut à la perche | Portée : Plateforme générique
+
+🔍 SYNTHÈSE EXÉCUTIVE
+Ce cahier des charges définit un système intelligent de nutrition sportive à double optimisation (performance athlétique + efficience économique), reposant sur :
+
+Un moteur Python d'optimisation mathématique (PuLP / OR-Tools)
+Une interface utilisateur Excel 100% paramétrable
+Des bases de données alimentaires reconnues scientifiquement (CIQUAL, USDA, Open Food Facts)
+Une architecture modulaire de 7 composants interconnectés
+
+
+🏗️ MODULE 1 — BASE DE DONNÉES ALIMENTAIRE
+
+
+Structure de chaque aliment
+Champ	Type	Source recommandée
+nom	string	Manuel
+calories_100g	float	CIQUAL / USDA
+proteines_g	float	CIQUAL / USDA
+glucides_g	float	CIQUAL / USDA
+lipides_g	float	CIQUAL / USDA
+fibres_g	float	CIQUAL
+micronutriments	dict	USDA FoodData Central
+digestibilite	enum (low/medium/high)	Littérature scientifique
+cout_kg	float	Relevé marché
+densite_proteique	float	Calculé : protéines / calories
+score_nutritionnel	float	Calculé (cf. Module 5)
+Sources des données alimentaires
+🇫🇷 CIQUAL (ANSES) — référence française
+🇺🇸 USDA FoodData Central — référence internationale
+🌍 Open Food Facts — données collaboratives open source
+
+
+💰 MODULE 2 — BASE DE DONNÉES PRIX DYNAMIQUE
+
+
+Structure de la table prix
+aliment_id | magasin | prix_actuel | prix_moyen | historique | date_maj | promo_bool
+Coq
+Formule de score promotionnel
+promo_score = (prix_moyen - prix_actuel) / prix_moyen
+TOML, also INI
+Un promo_score élevé → aliment en promotion → priorité d'intégration dans les repas
+
+Fonctionnalités clés
+✅ Détection automatique des opportunités d'achat
+✅ Priorisation dynamique des aliments selon le rapport qualité/prix du moment
+✅ Historique de prix (détection de tendances)
+✅ Multi-enseignes : Carrefour, Leclerc, Lidl, Aldi, etc.
+
+
+👤 MODULE 3 — PROFIL ATHLÈTE GÉNÉRIQUE
+
+
+Paramètres configurables (Excel uniquement — jamais codés en dur)
+┌─────────────────────────────────────────────────┐
+│ SECTION IDENTITÉ                                │
+│  • Âge / Sexe / Taille / Poids actuel          │
+│  • Poids cible / Composition corporelle        │
+├─────────────────────────────────────────────────┤
+│ SECTION SPORT & ENTRAÎNEMENT                   │
+│  • Sport pratiqué / Niveau (amateur→élite)     │
+│  • Fréquence / Objectifs                       │
+├─────────────────────────────────────────────────┤
+│ SECTION CONTRAINTES                            │
+│  • Allergies / Intolérances                    │
+│  • Préférences / Exclusions                    │
+│  • Contraintes digestives                      │
+└─────────────────────────────────────────────────┘
+Nix
+Cas utilisateur actuel (configuration Excel)
+⚠️ Ce cas est uniquement une instance de configuration, jamais du code métier.
+
+Paramètre	Valeur
+Sport	Saut à la perche
+Contexte médical	Reprise post-trauma crânien
+Poids actuel	80 kg
+Poids cible	72–73 kg
+Objectif	Recomposition corporelle
+Contraintes spéciales	Progression calorique contrôlée, gestion fatigue, récupération neurologique
+
+
+🏋️ MODULE 3 BIS — STRUCTURATION DES SÉANCES D'ENTRAÎNEMENT
+
+
+Matrice des séances et impacts nutritionnels
+Type de séance	Protéines	Glucides	Digestibilité avant	Priorité récupération
+Musculation (force/hypertrophie)	↑↑ élevées constantes	Élevés post-séance	Medium	Musculaire
+Sprint / Explosivité	Standard	↑↑ autour séance	Low (avant effort)	Nerveuse
+Technique (saut à la perche)	Standard	Stables	Low-Medium	Coordination motrice
+Résistance / Endurance	Standard	↑↑ max	Medium-High	Glycogène
+Repos	Légèrement ↓	Réduits	High	Passive
+Exemple de planning hebdomadaire
+Jour	Séance	Intensité	Calories	Glucides
+Lundi	Musculation	🔴 Haute	+300 kcal	Post-séance élevés
+Mardi	Technique	🔴 Haute	Standard	Stables
+Mercredi	Musculation + Sprint	🔴 Haute	+400 kcal	Très élevés
+Jeudi	Repos	🟢 Faible	-200 kcal	Réduits
+Vendredi	Musculation + Pliométrie	🔴 Haute	+350 kcal	Élevés
+Samedi	Récupération active	🟡 Moyenne	Standard	Modérés
+Dimanche	Repos complet	🟢 Faible	-200 kcal	Faibles
+
+
+⚙️ MODULE 4 — MOTEUR D'OPTIMISATION
+
+
+Fonction objectif (multi-critères)
+Minimiser :
+    (coût total des aliments)
+  + (pénalité de répétition alimentaire)
+  - (score nutrition-performance global)
+  - (score promotionnel pondéré)
+Python
+Contraintes du modèle
+# Énergie
+calories_totales == cible_dynamique_journalière
+
+# Macronutriments (basés sur les recommandations ISSN 2023)
+proteines >= 1.6 * poids_kg  # minimum sportif (g/jour)
+proteines <= 2.5 * poids_kg  # plafond protéique
+lipides   >= 0.8 * poids_kg  # minimum hormonal
+glucides  == periodises(type_seance)  # variable selon entraînement
+
+# Budget
+cout_journalier <= budget_max_journalier
+
+# Diversité
+nb_occurrences(aliment_i) <= max_repetition_semaine
+
+# Digestibilité
+digestibilite_avant_effort in ['low', 'medium']  # jamais 'high' avant effort intense
+
+# Exclusions utilisateur
+aliment not in liste_aliments_interdits
+Python
+Recommandations scientifiques intégrées
+📚 ISSN Position Stand : 1.4–2.0 g/kg/j pour la masse musculaire ; jusqu'à 2.5 g/kg/j en phase de recomposition 📚 Burke & Jeukendrup : Périodisation glucidique "Train High / Train Low" selon charge d'entraînement 📚 Areta et al. : Distribution protéique toutes les 3–4h pour maximiser la synthèse protéique musculaire (MPS)
+
+
+🏅 MODULE 5 — SCORE ALIMENTAIRE
+
+
+Formule de scoring
+score_aliment =
+    (score_proteines × pondération_sport)
+  + (score_micronutriments × pondération_santé)
+  + (score_digestibilité_adaptée)
+  - (coût_normalisé)
+  + (promo_score × bonus_promo)
+Lisp
+Exemple de calibration pour le saut à la perche
+Critère	Pondération
+Densité protéique	30%
+Digestibilité avant effort	25%
+Coût par gramme de protéines	20%
+Micronutriments clés (Fe, Mg, Vit D)	15%
+Score promotionnel	10%
+
+
+🛒 MODULE 6 — PANIER HEBDOMADAIRE AUTOMATISÉ
+
+
+Output généré automatiquement chaque semaine
+┌────────────────────────────────────────────────┐
+│          PLAN HEBDOMADAIRE OPTIMISÉ           │
+├────────────────────────────────────────────────┤
+│ 21 repas structurés (3/jour × 7 jours)        │
+│ Liste de courses consolidée et optimisée      │
+│ Budget total hebdomadaire calculé             │
+│ Macros détaillées par repas et par jour       │
+│ Exploitation maximale des promotions          │
+│ Équilibre nutritionnel validé                 │
+└────────────────────────────────────────────────┘
+Stata
+
+
+🔄 MODULE 7 — ADAPTATION DYNAMIQUE HEBDOMADAIRE
+
+
+Cycle de mise à jour automatique
+Début de semaine
+      │
+      ├─► Récupération prix actuels (API / scraping)
+      │
+      ├─► Lecture poids réel athlète (Excel)
+      │
+      ├─► Ajustement calories cibles
+      │        └─► Si poids stagnant → déficit ajusté
+      │        └─► Si perte trop rapide → recalibrage
+      │
+      ├─► Mise à jour planning entraînement (Excel)
+      │
+      ├─► Recalcul moteur d'optimisation (Python/PuLP)
+      │
+      └─► Génération nouveaux 21 repas → Export Excel
+PowerShell
+
+
+🔧 MODULE 8 — PARAMÉTRABILITÉ TOTALE (PRINCIPE FONDAMENTAL)
+
+
+⚠️ Règle absolue : AUCUNE donnée utilisateur dans le code Python.
+
+Architecture de séparation des responsabilités
+Composant	Rôle	Contenu
+Excel (Interface)	Config + Saisie + Résultats	Profil, planning, budget, préférences, outputs
+Python (Moteur)	Optimisation générique	Algorithme, contraintes, lecture Excel
+SQLite/PostgreSQL (Données)	Stockage	Aliments, prix, historique
+Feuilles Excel recommandées
+📗 Classeur_Nutrition_Elite.xlsx
+ ├── PROFIL_ATHLÈTE      → données personnelles & objectifs
+ ├── PLANNING_HEBDO      → séances, intensités, jours
+ ├── OBJECTIFS_NUTRITION → calories, ratios, contraintes
+ ├── BUDGET              → quotidien, hebdomadaire
+ ├── ALIMENTS_EXCLUS     → liste noire personnalisée
+ ├── PRIX_MARCHÉ         → relevés / imports automatiques
+ ├── RÉSULTATS_REPAS     → 21 repas générés
+ ├── LISTE_COURSES       → consolidée et optimisée
+ ├── SUIVI_POIDS         → courbe + ajustements
+ └── SOURCES_SCIENTIFIQUES → traçabilité
+CSS
+🧪 STACK TECHNIQUE RECOMMANDÉ
+Python — Bibliothèques
+Bibliothèque	Usage
+pandas	Manipulation des données alimentaires & prix
+numpy	Calculs numériques (scores, macros)
+PuLP	Moteur LP/MIP principal (recommandé prototype)
+OR-Tools	Alternative Google pour optimisation avancée
+openpyxl	Lecture/écriture Excel avec mise en forme
+requests	Appels API (prix, Open Food Facts)
+schedule / APScheduler	Automatisation hebdomadaire
+Base de données
+Phase	Technologie	Justification
+Prototype	SQLite	Léger, sans serveur, fichier unique
+Production	PostgreSQL	Robuste, multi-utilisateurs, performant
+Automatisation
+Niveau	Outil
+Simple	cron (Linux) / Task Scheduler (Windows)
+Avancé	Apache Airflow (orchestration de pipelines)
+📊 OUTPUT FINAL — FORMAT EXCEL HEBDOMADAIRE
+┌─────────────────────────────────────────────────────────────────┐
+│                  RAPPORT HEBDOMADAIRE ATHLÈTE                  │
+├─────────────────────────────────────────────────────────────────┤
+│ ✅ 21 repas optimisés (détail par aliment, quantité, macro)     │
+│ ✅ Liste de courses complète avec prix et quantités            │
+│ ✅ Budget total alimentaire de la semaine                      │
+│ ✅ Macros détaillées par repas (P / G / L / kcal)             │
+│ ✅ Adaptation aux séances (timing, digestibilité)             │
+│ ✅ Analyse nutritionnelle complète (vitamines, minéraux)       │
+│ ✅ Ratio performance/coût par repas                           │
+│ ✅ Courbe de suivi du poids + projection                      │
+│ ✅ Alertes nutritionnelles automatiques                       │
+└─────────────────────────────────────────────────────────────────┘
+Stata
+📚 SOURCES SCIENTIFIQUES FONDATRICES
+Domaine	Source	Application dans le système
+Protéines athlètes	ISSN Position Stand 2023 — 1.4 à 2.5 g/kg/j	Seuils protéiques dans les contraintes LP
+Distribution protéique	Areta et al. — toutes les 3–4h	Spacing des repas / timing
+Périodisation glucides	Burke & Jeukendrup — Train High/Low	Modulation glucides selon séance
+Composition corporelle	Hall et al. — métabolisme adaptation	Ajustement calorique dynamique
+Récupération	ISSN Recovery — oméga-3, vit D	Scoring micronutriments
+Digestion & performance	Jeukendrup — IOC Consensus	Contrainte digestibilité avant effort
+Optimisation LP	OR-Tools Google / Winston	Architecture du solveur
+Données alimentaires	CIQUAL / USDA / Open Food Facts	Base de données aliments
+Énergie disponible	Loucks et al.	Seuil énergétique minimum
+🗺️ PLAN DE DÉVELOPPEMENT RECOMMANDÉ
+PHASE 1 — FONDATIONS (Semaines 1-3)
+  └── Structuration base de données alimentaire (CIQUAL + USDA)
+  └── Modèle Excel de profil athlète
+  └── Prototype moteur PuLP (1 journée, 3 repas)
+
+PHASE 2 — MOTEUR COMPLET (Semaines 4-6)
+  └── Extension à 21 repas hebdomadaires
+  └── Intégration contraintes type de séances
+  └── Score alimentaire multicritères
+
+PHASE 3 — DYNAMISME (Semaines 7-9)
+  └── Module prix dynamique
+  └── Détection promotions
+  └── Suivi poids et ajustement calorique
+
+PHASE 4 — AUTOMATISATION & POLISH (Semaines 10-12)
+  └── Export Excel formaté complet
+  └── Automatisation hebdomadaire
+  └── Tests multi-profils athlètes
+  └── Documentation & sources scientifiques
+Stata
+✅ VALIDATION & POINTS DE CONTRÔLE CRITIQUES
+ Aucun hardcoding utilisateur dans le code Python ✔
+ Toutes les contraintes lisibles depuis Excel ✔
+ Fonction objectif multi-critères opérationnelle (coût + nutrition + promo) ✔
+ Module séances influençant dynamiquement les macros ✔
+ Score alimentaire calculé automatiquement ✔
+ 21 repas hebdomadaires générés et exportés ✔
+ Sources scientifiques tracées et centralisées ✔
+ Extensibilité à tout profil athlète validée ✔
