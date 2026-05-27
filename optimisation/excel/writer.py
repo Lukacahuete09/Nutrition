@@ -4,7 +4,7 @@
 #
 # Deux modes de fonctionnement :
 #
-# Mode 1 — Ecriture dans athlete_config.xlsx (production)
+# Mode 1 — Ecriture dans athlete_config.xlsm (production)
 #   -> ecrire_resultats_excel()
 #   -> Preserve les feuilles de config existantes
 #   -> Ecrase uniquement les feuilles de resultats
@@ -35,8 +35,6 @@ OUTPUT_DIR = os.path.join(
     "..", "output"
 )
 
-# Feuilles de resultats a ecraser a chaque execution
-# Les feuilles de config ne sont jamais touchees
 FEUILLES_RESULTATS = [
     "PLANNING_SEMAINE",
     "RECETTES",
@@ -44,7 +42,6 @@ FEUILLES_RESULTATS = [
     "SUIVI_NUTRITIONNEL",
 ]
 
-# Feuilles de config a ne jamais modifier
 FEUILLES_CONFIG = [
     "PROFIL",
     "PLANNING",
@@ -75,6 +72,7 @@ COULEURS = {
     "petit_dej"  : "2980B9",
     "dejeuner"   : "27AE60",
     "diner"      : "8E44AD",
+    "changer"    : "E74C3C",
 }
 
 
@@ -165,6 +163,8 @@ def _couleur_type_repas(type_repas: str) -> str:
 
 # ------------------------------------------------------------
 # FEUILLE PLANNING SEMAINE
+# Avec bouton CHANGER par recette (col 13)
+# Colonnes cachees 14/15/16 pour la macro VBA
 # ------------------------------------------------------------
 def _build_feuille_planning(ws, resultats: list, config: dict):
     ws.sheet_view.showGridLines = False
@@ -181,6 +181,10 @@ def _build_feuille_planning(ws, resultats: list, config: dict):
     _set_col_width(ws, 10, 10)
     _set_col_width(ws, 11, 14)
     _set_col_width(ws, 12, 32)
+    _set_col_width(ws, 13, 12)  # bouton Changer
+    _set_col_width(ws, 14,  1)  # nom recette cache
+    _set_col_width(ws, 15,  1)  # type repas cache
+    _set_col_width(ws, 16,  1)  # jours caches
 
     profil = config.get("profil", {})
     nom    = profil.get("nom", "Athlete")
@@ -193,13 +197,14 @@ def _build_feuille_planning(ws, resultats: list, config: dict):
         f"Objectif : {profil.get('objectif', '')} — "
         f"{profil.get('poids_actuel_kg', '')} kg "
         f"-> {profil.get('poids_cible_kg', '')} kg",
-        nb_cols=12
+        nb_cols=13
     )
 
     _write_header_row(ws, 3, [
         "N", "Jours", "Type", "Recette",
         "Kcal", "Prot", "Gluc", "Lip",
-        "Cout", "Prep", "Batch", "Source"
+        "Cout", "Prep", "Batch", "Source",
+        "Action"
     ])
 
     row = 4
@@ -212,18 +217,19 @@ def _build_feuille_planning(ws, resultats: list, config: dict):
         couleur_tr = _couleur_type_repas(res["type_repas"])
 
         valeurs = [
-            (i,                                "center"),
-            (jours_str,                        "left"),
-            (res["type_repas"],                "center"),
-            (res["nom_fr"],                    "left"),
-            (f"{mr['calories']:.0f}",          "center"),
-            (f"{mr['proteines_g']:.0f}g",      "center"),
-            (f"{mr['glucides_g']:.0f}g",       "center"),
-            (f"{mr['lipides_g']:.0f}g",        "center"),
-            (f"{res['cout']:.2f} e",           "center"),
-            (f"{res['temps_prep_min']} min",   "center"),
-            (batch_str,                        "center"),
-            (res.get("source_url", ""),        "left"),
+            (i,                              "center"),
+            (jours_str,                      "left"),
+            (res["type_repas"],              "center"),
+            (res["nom_fr"],                  "left"),
+            (f"{mr['calories']:.0f}",        "center"),
+            (f"{mr['proteines_g']:.0f}g",    "center"),
+            (f"{mr['glucides_g']:.0f}g",     "center"),
+            (f"{mr['lipides_g']:.0f}g",      "center"),
+            (f"{res['cout']:.2f} e",         "center"),
+            (f"{res['temps_prep_min']} min", "center"),
+            (batch_str,                      "center"),
+            (res.get("source_url", ""),      "left"),
+            ("Changer",                      "center"),
         ]
 
         for col, (val, halign) in enumerate(valeurs, 1):
@@ -234,16 +240,39 @@ def _build_feuille_planning(ws, resultats: list, config: dict):
             c.alignment = _align(halign, "center")
             c.border    = _border_thin()
 
-        # Colorier la cellule type repas
+        # Style bouton Changer
+        ws.cell(row=row, column=13).fill = _fill(COULEURS["changer"])
+        ws.cell(row=row, column=13).font = _font("FFFFFF", bold=True, size=9)
+
+        # Colorier cellule type repas
         ws.cell(row=row, column=3).fill = _fill(couleur_tr)
         ws.cell(row=row, column=3).font = _font("FFFFFF", bold=True, size=8)
+
+        # Colonnes cachees pour la macro VBA
+        # Col 14 : nom de la recette
+        c        = ws.cell(row=row, column=14)
+        c.value  = res["nom_fr"]
+        c.font   = _font("FFFFFF", size=1)
+        c.fill   = _fill("FFFFFF")
+
+        # Col 15 : type de repas
+        c        = ws.cell(row=row, column=15)
+        c.value  = res["type_repas"]
+        c.font   = _font("FFFFFF", size=1)
+        c.fill   = _fill("FFFFFF")
+
+        # Col 16 : jours concernes
+        c        = ws.cell(row=row, column=16)
+        c.value  = jours_str
+        c.font   = _font("FFFFFF", size=1)
+        c.fill   = _fill("FFFFFF")
 
         _set_row_height(ws, row, 18)
         row += 1
 
-    # Recapitulatif budget
+    # Recapitulatif
     row += 1
-    _write_separateur(ws, row, "Recapitulatif semaine", nb_cols=12)
+    _write_separateur(ws, row, "Recapitulatif semaine", nb_cols=13)
     row += 1
 
     total_cout = sum(r["cout"] for r in resultats)
@@ -276,6 +305,19 @@ def _build_feuille_planning(ws, resultats: list, config: dict):
         c.border    = _border_thin()
         _set_row_height(ws, row, 18)
         row += 1
+
+    # Note bouton Changer
+    row += 1
+    ws.merge_cells(f"A{row}:M{row}")
+    c           = ws.cell(row=row, column=1)
+    c.value     = (
+        "Bouton CHANGER : cliquez pour remplacer une recette "
+        "qui ne vous convient pas. "
+        "Une alternative sera generee automatiquement."
+    )
+    c.font      = _font(COULEURS["section_fg"], size=8, italic=True)
+    c.alignment = _align("left", "center")
+    _set_row_height(ws, row, 14)
 
     ws.sheet_properties.tabColor = COULEURS["titre_bg"]
 
@@ -451,7 +493,6 @@ def _build_feuille_courses(ws, resultats: list):
         nb_cols=5
     )
 
-    # Consolidation des ingredients
     courses = {}
     for res in resultats:
         if res["statut"] != "ok":
@@ -489,10 +530,10 @@ def _build_feuille_courses(ws, resultats: list):
         )
 
         valeurs = [
-            (i,                            "center"),
-            (ing["nom"],                   "left"),
-            (qte_str,                      "center"),
-            ("",                           "center"),
+            (i,                           "center"),
+            (ing["nom"],                  "left"),
+            (qte_str,                     "center"),
+            ("",                          "center"),
             (", ".join(ing["repas"][:3]), "left"),
         ]
 
@@ -507,7 +548,6 @@ def _build_feuille_courses(ws, resultats: list):
         _set_row_height(ws, row, 18)
         row += 1
 
-    # Note bas de page
     row += 1
     ws.merge_cells(f"A{row}:E{row}")
     c           = ws.cell(row=row, column=1)
@@ -571,14 +611,14 @@ def _build_feuille_nutrition(ws, resultats: list, planning_semaine: list):
             couleur_ecart = COULEURS["erreur"]
 
         valeurs = [
-            (jours_str,                    "left",   bg),
-            (res["nom_fr"],                "left",   bg),
-            (f"{mc['calories']:.0f}",      "center", bg),
-            (f"{mr['calories']:.0f}",      "center", couleur_ecart),
-            (f"{mc['proteines_g']:.0f}g",  "center", bg),
-            (f"{mr['proteines_g']:.0f}g",  "center", bg),
-            (f"{mc['glucides_g']:.0f}g",   "center", bg),
-            (f"{mr['glucides_g']:.0f}g",   "center", bg),
+            (jours_str,                   "left",   bg),
+            (res["nom_fr"],               "left",   bg),
+            (f"{mc['calories']:.0f}",     "center", bg),
+            (f"{mr['calories']:.0f}",     "center", couleur_ecart),
+            (f"{mc['proteines_g']:.0f}g", "center", bg),
+            (f"{mr['proteines_g']:.0f}g", "center", bg),
+            (f"{mc['glucides_g']:.0f}g",  "center", bg),
+            (f"{mr['glucides_g']:.0f}g",  "center", bg),
         ]
 
         for col, (val, halign, bg_cell) in enumerate(valeurs, 1):
@@ -597,7 +637,6 @@ def _build_feuille_nutrition(ws, resultats: list, planning_semaine: list):
         _set_row_height(ws, row, 18)
         row += 1
 
-    # Moyennes
     row += 1
     _write_separateur(ws, row, "Moyennes sur la semaine", nb_cols=8)
     row += 1
@@ -605,11 +644,16 @@ def _build_feuille_nutrition(ws, resultats: list, planning_semaine: list):
     nb = len(resultats)
     if nb > 0:
         moyennes = [
-            ("Moyenne calories/repas",   f"{sum(r['macros_reelles']['calories']    for r in resultats)/nb:.0f} kcal"),
-            ("Moyenne proteines/repas",  f"{sum(r['macros_reelles']['proteines_g'] for r in resultats)/nb:.0f} g"),
-            ("Moyenne glucides/repas",   f"{sum(r['macros_reelles']['glucides_g']  for r in resultats)/nb:.0f} g"),
-            ("Moyenne lipides/repas",    f"{sum(r['macros_reelles']['lipides_g']   for r in resultats)/nb:.0f} g"),
-            ("Total calories semaine",   f"{sum(r['macros_reelles']['calories']    for r in resultats):.0f} kcal"),
+            ("Moyenne calories/repas",
+             f"{sum(r['macros_reelles']['calories']    for r in resultats)/nb:.0f} kcal"),
+            ("Moyenne proteines/repas",
+             f"{sum(r['macros_reelles']['proteines_g'] for r in resultats)/nb:.0f} g"),
+            ("Moyenne glucides/repas",
+             f"{sum(r['macros_reelles']['glucides_g']  for r in resultats)/nb:.0f} g"),
+            ("Moyenne lipides/repas",
+             f"{sum(r['macros_reelles']['lipides_g']   for r in resultats)/nb:.0f} g"),
+            ("Total calories semaine",
+             f"{sum(r['macros_reelles']['calories']    for r in resultats):.0f} kcal"),
         ]
 
         for label, valeur in moyennes:
@@ -633,63 +677,184 @@ def _build_feuille_nutrition(ws, resultats: list, planning_semaine: list):
 
     ws.sheet_properties.tabColor = "8E44AD"
 
+# ------------------------------------------------------------
+# FEUILLE RECETTES EXCLUES
+# Creee une seule fois, jamais ecrasee
+# Remplie automatiquement par la macro VBA
+# quand l utilisateur clique sur Changer
+# ------------------------------------------------------------
+def _build_feuille_recettes_exclues(ws) -> None:
+    ws.sheet_view.showGridLines = False
+    ws.sheet_properties.tabColor = COULEURS["changer"]
+
+    _set_col_width(ws, 1, 40)
+    _set_col_width(ws, 2, 25)
+    _set_col_width(ws, 3, 15)
+
+    _write_titre(
+        ws,
+        "Recettes exclues",
+        "Recettes ajoutees via le bouton Changer. "
+        "Ne seront jamais reproposees.",
+        nb_cols=3
+    )
+
+    _write_header_row(ws, 3, [
+        "Nom de la recette",
+        "Raison",
+        "Date"
+    ])
+
+    # Ligne exemple
+    exemples = [
+        ("Exemple : Chicken Brown Rice", "N aime pas", datetime.now().strftime("%d/%m/%Y")),
+    ]
+    for i, (nom, raison, date) in enumerate(exemples, start=4):
+        bg = COULEURS["alt_row"] if i % 2 == 0 else COULEURS["valeur_bg"]
+        for col, val in enumerate([nom, raison, date], 1):
+            c           = ws.cell(row=i, column=col)
+            c.value     = val
+            c.fill      = _fill(bg)
+            c.font      = _font(COULEURS["section_fg"], size=9, italic=True)
+            c.alignment = _align("left", "center")
+            c.border    = _border_thin()
+        _set_row_height(ws, i, 18)
+
 
 # ------------------------------------------------------------
-# ECRITURE DANS ATHLETE_CONFIG.XLSX (MODE PRODUCTION)
-# Preserve les feuilles de config
-# Ecrase uniquement les feuilles de resultats
+# ECRITURE DANS ATHLETE_CONFIG.XLSM (MODE PRODUCTION)
 # ------------------------------------------------------------
 def ecrire_resultats_excel(
     resultats        : list,
     config           : dict,
     planning_semaine : list,
 ) -> str:
+
+    sys.path.insert(0, os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..")
+    ))
+    from optimisation.config import EXCEL_CONFIG_PATH
+
+    # Verifier que le fichier n est pas ouvert
+    try:
+        with open(EXCEL_CONFIG_PATH, "a"):
+            pass
+    except PermissionError:
+        raise PermissionError(
+            f"\n[ERREUR] Fermez athlete_config.xlsm dans Excel "
+            f"avant de lancer le script.\n"
+            f"         {EXCEL_CONFIG_PATH}"
+        )
+
+    print(f"\n[...] Ecriture des resultats dans : {EXCEL_CONFIG_PATH}")
+
+    wb = openpyxl.load_workbook(
+        EXCEL_CONFIG_PATH,
+        keep_vba=True
+    )
+
+    # Supprimer uniquement les feuilles de resultats
+    for nom in FEUILLES_RESULTATS:
+        if nom in wb.sheetnames:
+            del wb[nom]
+            print(f"      Feuille '{nom}' supprimee et recreee")
+
+    # Creer RECETTES_EXCLUES uniquement si elle n existe pas
+    # On ne la supprime jamais car elle contient les choix utilisateur
+    if "RECETTES_EXCLUES" not in wb.sheetnames:
+        ws_exclues = wb.create_sheet("RECETTES_EXCLUES")
+        _build_feuille_recettes_exclues(ws_exclues)
+        print(f"      Feuille 'RECETTES_EXCLUES' creee")
+
+    # Creer les nouvelles feuilles de resultats
+    ws_planning  = wb.create_sheet("PLANNING_SEMAINE")
+    ws_recettes  = wb.create_sheet("RECETTES")
+    ws_courses   = wb.create_sheet("LISTE_COURSES")
+    ws_nutrition = wb.create_sheet("SUIVI_NUTRITIONNEL")
+
+    _build_feuille_planning (ws_planning,  resultats, config)
+    _build_feuille_recettes (ws_recettes,  resultats)
+    _build_feuille_courses  (ws_courses,   resultats)
+    _build_feuille_nutrition(ws_nutrition, resultats, planning_semaine)
+
+    wb.save(EXCEL_CONFIG_PATH)
+    print(f"[OK] Resultats ecrits dans : {EXCEL_CONFIG_PATH}")
+    print(f"     Feuilles config preservees  : {FEUILLES_CONFIG}")
+    print(f"     Feuilles resultats ecrites  : {FEUILLES_RESULTATS}")
+    print(f"     Feuille RECETTES_EXCLUES    : preservee")
+
+    return EXCEL_CONFIG_PATH
+
+def _mettre_a_jour_repas_excel(
+    nom_recette_exclue : str,
+    nouveau_repas      : dict,
+    type_repas         : str,
+    jours              : list,
+) -> None:
     """
-    Ecrit les resultats directement dans athlete_config.xlsx.
-    
-    - Preserve toutes les feuilles de configuration
-    - Supprime et reecrit uniquement les feuilles de resultats
-    - Utilise par run_weekly.py (cron automatique)
+    Met a jour une ligne specifique dans PLANNING_SEMAINE
+    et met a jour la feuille RECETTES avec la nouvelle recette.
     """
     sys.path.insert(0, os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..")
     ))
     from optimisation.config import EXCEL_CONFIG_PATH
 
-    print(f"\n[...] Ecriture des resultats dans : {EXCEL_CONFIG_PATH}")
+    # Verifier que le fichier n est pas ouvert
+    try:
+        with open(EXCEL_CONFIG_PATH, "a"):
+            pass
+    except PermissionError:
+        raise PermissionError(
+            f"[ERREUR] Fermez athlete_config.xlsm avant de regenerer."
+        )
 
-    wb = openpyxl.load_workbook(EXCEL_CONFIG_PATH)
+    wb              = openpyxl.load_workbook(EXCEL_CONFIG_PATH, keep_vba=True)
+    ws_planning     = wb["PLANNING_SEMAINE"]
+    mr              = nouveau_repas["macros_reelles"]
+    jours_str       = " / ".join(jours)
 
-    # Supprimer les anciennes feuilles de resultats uniquement
-    for nom in FEUILLES_RESULTATS:
-        if nom in wb.sheetnames:
-            del wb[nom]
-            print(f"      Feuille '{nom}' supprimee et recreee")
+    # Chercher la ligne a mettre a jour
+    for row in range(4, ws_planning.max_row + 1):
+        nom_cellule = ws_planning.cell(row=row, column=14).value
+        if nom_cellule and nom_cellule.lower() == nom_recette_exclue.lower():
 
-    # Creer les nouvelles feuilles de resultats
-    ws_planning = wb.create_sheet("PLANNING_SEMAINE")
-    _build_feuille_planning(ws_planning, resultats, config)
+            # Mettre a jour le nom de la recette
+            ws_planning.cell(row=row, column=4).value  = nouveau_repas["nom_fr"]
+            ws_planning.cell(row=row, column=5).value  = f"{mr['calories']:.0f}"
+            ws_planning.cell(row=row, column=6).value  = f"{mr['proteines_g']:.0f}g"
+            ws_planning.cell(row=row, column=7).value  = f"{mr['glucides_g']:.0f}g"
+            ws_planning.cell(row=row, column=8).value  = f"{mr['lipides_g']:.0f}g"
+            ws_planning.cell(row=row, column=9).value  = f"{nouveau_repas['cout']:.2f} e"
+            ws_planning.cell(row=row, column=10).value = f"{nouveau_repas['temps_prep_min']} min"
+            ws_planning.cell(row=row, column=12).value = nouveau_repas.get("source_url", "")
 
-    ws_recettes = wb.create_sheet("RECETTES")
-    _build_feuille_recettes(ws_recettes, resultats)
+            # Mettre a jour les colonnes cachees
+            ws_planning.cell(row=row, column=14).value = nouveau_repas["nom_fr"]
 
-    ws_courses = wb.create_sheet("LISTE_COURSES")
-    _build_feuille_courses(ws_courses, resultats)
+            print(f"[OK] Ligne {row} mise a jour : {nouveau_repas['nom_fr']}")
+            break
 
-    ws_nutrition = wb.create_sheet("SUIVI_NUTRITIONNEL")
-    _build_feuille_nutrition(ws_nutrition, resultats, planning_semaine)
+    # Mettre a jour la feuille RECETTES
+    if "RECETTES" in wb.sheetnames:
+        ws_recettes = wb["RECETTES"]
+
+        # Trouver et remplacer le bloc de la recette exclue
+        for row in range(3, ws_recettes.max_row + 1):
+            val = ws_recettes.cell(row=row, column=1).value
+            if val and nom_recette_exclue.upper() in str(val).upper():
+                # Remplacer le titre
+                ws_recettes.cell(row=row, column=1).value = (
+                    f"{nouveau_repas['nom_fr'].upper()} — {jours_str}"
+                )
+                print(f"[OK] Feuille RECETTES mise a jour ligne {row}")
+                break
 
     wb.save(EXCEL_CONFIG_PATH)
-    print(f"[OK] Resultats ecrits dans : {EXCEL_CONFIG_PATH}")
-    print(f"     Feuilles de config preservees : {FEUILLES_CONFIG}")
-    print(f"     Feuilles de resultats ecrites : {FEUILLES_RESULTATS}")
-
-    return EXCEL_CONFIG_PATH
-
+    print(f"[OK] Excel mis a jour : {EXCEL_CONFIG_PATH}")
 
 # ------------------------------------------------------------
 # EXPORT DANS UN NOUVEAU FICHIER (MODE ARCHIVE)
-# Genere un fichier horodate dans output/
 # ------------------------------------------------------------
 def exporter_planning(
     resultats        : list,
@@ -697,10 +862,7 @@ def exporter_planning(
     planning_semaine : list,
     nom_fichier      : str = None,
 ) -> str:
-    """
-    Genere un fichier Excel archive dans output/.
-    Utile pour conserver un historique des plannings.
-    """
+
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     if nom_fichier is None:
@@ -743,11 +905,11 @@ if __name__ == "__main__":
         os.path.join(os.path.dirname(__file__), "..", "..")
     ))
 
-    from optimisation.excel.reader             import lire_config_athlete
-    from optimisation.engine.calories          import calcul_calories_semaine
-    from optimisation.engine.macros            import calcul_macros_semaine
-    from optimisation.planning.semaine         import construire_planning_semaine
-    from optimisation.engine.recipe_optimizer  import generer_semaine_recettes
+    from optimisation.excel.reader            import lire_config_athlete
+    from optimisation.engine.calories         import calcul_calories_semaine
+    from optimisation.engine.macros           import calcul_macros_semaine
+    from optimisation.planning.semaine        import construire_planning_semaine
+    from optimisation.engine.recipe_optimizer import generer_semaine_recettes
 
     config             = lire_config_athlete()
     planning_calorique = calcul_calories_semaine(config)
@@ -757,7 +919,7 @@ if __name__ == "__main__":
     )
     resultats = generer_semaine_recettes(config, planning_semaine)
 
-    # Mode 1 : ecrire dans athlete_config.xlsx
+    # Mode 1 : ecrire dans athlete_config.xlsm
     ecrire_resultats_excel(resultats, config, planning_semaine)
 
     # Mode 2 : exporter une archive horodatee

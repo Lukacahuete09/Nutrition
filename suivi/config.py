@@ -18,7 +18,7 @@ NUTRITION_DB      = os.path.abspath(
     os.path.join(BASE_DIR, "..", "create_db", "data", "nutrition.db")
 )
 EXCEL_CONFIG_PATH = os.path.abspath(
-    os.path.join(BASE_DIR, "..", "optimisation", "data", "athlete_config.xlsx")
+    os.path.join(BASE_DIR, "..", "optimisation", "data", "athlete_config.xlsm")
 )
 PRIX_XLSX         = os.path.join(DATA_DIR,   "prix.xlsx")
 SUIVI_POIDS_XLSX  = os.path.join(OUTPUT_DIR, "suivi_poids.xlsx")
