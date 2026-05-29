@@ -1,33 +1,37 @@
 # ============================================================
-# MISE A JOUR DES PRIX EN BASE
+# MISE À JOUR DES PRIX EN BASE
 # suivi/prix/updater.py
 #
-# Lit le fichier prix.xlsx et met a jour
-# la colonne cout_kg dans nutrition.db
-# pour chaque aliment renseigne.
+# Dans la nouvelle architecture, l'updater est appelé
+# par pipeline_prix.py APRÈS le pricing Piloterr.
 #
-# Calcule egalement le prix moyen historique
-# et le promo_score pour chaque aliment.
+# Son rôle est de mettre à jour nutrition.db avec les
+# prix récupérés via l'API magasin (plus via Excel).
+#
+# Il conserve l'historique des prix et calcule
+# le promo_score pour chaque aliment.
 # ============================================================
 
-import os
 import sys
 import sqlite3
-import openpyxl
+from pathlib import Path
 from datetime import datetime
 sys.dont_write_bytecode = True
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ROOT_DIR = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT_DIR))
+
 from config import (
     NUTRITION_DB,
-    PRIX_XLSX,
     NB_SEMAINES_HISTORIQUE_PRIX,
-    PROMO_SCORE_MIN,
 )
+
+# Seuil promo défini localement car supprimé du config v1
+PROMO_SCORE_MIN = 0.15
 
 
 # ------------------------------------------------------------
-# CONNEXION BASE DE DONNEES
+# CONNEXION BASE DE DONNÉES
 # ------------------------------------------------------------
 def _get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(NUTRITION_DB)
@@ -36,12 +40,10 @@ def _get_connection() -> sqlite3.Connection:
 
 
 # ------------------------------------------------------------
-# CREATION TABLE HISTORIQUE PRIX
-# Creee si elle n existe pas encore
+# CRÉATION TABLE HISTORIQUE PRIX
 # ------------------------------------------------------------
 def _create_table_prix(conn: sqlite3.Connection) -> None:
-    cursor = conn.cursor()
-    cursor.execute("""
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS historique_prix (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             aliment_id  INTEGER NOT NULL,
@@ -60,77 +62,12 @@ def _create_table_prix(conn: sqlite3.Connection) -> None:
 
 
 # ------------------------------------------------------------
-# LECTURE DU FICHIER PRIX.XLSX
+# RECHERCHE D'UN ALIMENT EN BASE
 # ------------------------------------------------------------
-def _lire_prix_excel() -> list:
-    """
-    Lit le fichier prix.xlsx et retourne une liste
-    de dictionnaires avec les prix saisis.
-
-    Format attendu dans prix.xlsx :
-      Feuille PRIX_SEMAINE :
-        Col A : Nom aliment (doit correspondre a nutrition.db)
-        Col B : Magasin
-        Col C : Prix actuel (euros/kg)
-        Col D : Notes (optionnel)
-
-    Retourne :
-      [
-        {
-          "nom"        : "Poulet blanc cuit",
-          "magasin"    : "Leclerc",
-          "prix"       : 8.50,
-          "notes"      : "",
-        },
-        ...
-      ]
-    """
-    if not os.path.exists(PRIX_XLSX):
-        print(f"[WARN] Fichier prix introuvable : {PRIX_XLSX}")
-        print(f"[INFO] Creez le fichier via : python suivi/prix/create_prix_excel.py")
-        return []
-
-    wb     = openpyxl.load_workbook(PRIX_XLSX, data_only=True)
-
-    if "PRIX_SEMAINE" not in wb.sheetnames:
-        print(f"[WARN] Feuille 'PRIX_SEMAINE' introuvable dans prix.xlsx")
-        return []
-
-    ws     = wb["PRIX_SEMAINE"]
-    prix   = []
-    row    = 4   # Les donnees commencent ligne 4 (apres titre + header)
-
-    while ws.cell(row=row, column=1).value:
-        nom     = str(ws.cell(row=row, column=1).value or "").strip()
-        magasin = str(ws.cell(row=row, column=2).value or "").strip()
-        prix_v  = ws.cell(row=row, column=3).value
-        notes   = str(ws.cell(row=row, column=4).value or "").strip()
-
-        if nom and prix_v is not None:
-            try:
-                prix.append({
-                    "nom"     : nom,
-                    "magasin" : magasin,
-                    "prix"    : float(prix_v),
-                    "notes"   : notes,
-                })
-            except (ValueError, TypeError):
-                print(f"[WARN] Prix invalide ligne {row} : {prix_v}")
-
-        row += 1
-
-    wb.close()
-    print(f"[OK] {len(prix)} prix lus depuis prix.xlsx")
-    return prix
-
-
-# ------------------------------------------------------------
-# RECHERCHE D UN ALIMENT EN BASE
-# ------------------------------------------------------------
-def _trouver_aliment(conn: sqlite3.Connection, nom: str) -> dict | None:
+def _trouver_aliment(conn: sqlite3.Connection, nom: str):
     """
     Cherche un aliment dans nutrition.db par son nom.
-    Recherche exacte d abord, puis partielle.
+    Recherche exacte d'abord, puis partielle.
     """
     cursor = conn.cursor()
 
@@ -156,31 +93,34 @@ def _trouver_aliment(conn: sqlite3.Connection, nom: str) -> dict | None:
 
 
 # ------------------------------------------------------------
-# CALCUL DU PRIX MOYEN HISTORIQUE
+# CALCUL DU PRIX MOYEN HISTORIQUE — Corrigé
 # ------------------------------------------------------------
 def _calculer_prix_moyen(
-    conn       : sqlite3.Connection,
-    aliment_id : int,
-    prix_actuel: float,
+    conn        : sqlite3.Connection,
+    aliment_id  : int,
+    prix_actuel : float,
 ) -> float:
     """
     Calcule le prix moyen sur les NB_SEMAINES_HISTORIQUE_PRIX
-    dernieres semaines.
+    dernières semaines.
 
-    Si pas d historique -> retourne le prix actuel.
+    ✅ Fix : sous-requête pour que LIMIT soit respecté avec AVG.
     """
     cursor = conn.cursor()
     cursor.execute("""
         SELECT AVG(prix_actuel) as moy
-        FROM historique_prix
-        WHERE aliment_id = ?
-        ORDER BY date_releve DESC
-        LIMIT ?
+        FROM (
+            SELECT prix_actuel
+            FROM historique_prix
+            WHERE aliment_id = ?
+            ORDER BY date_releve DESC
+            LIMIT ?
+        )
     """, (aliment_id, NB_SEMAINES_HISTORIQUE_PRIX))
 
     row = cursor.fetchone()
     if row and row["moy"] is not None:
-        # Moyenne ponderee : 70% historique + 30% prix actuel
+        # Moyenne pondérée : 70% historique + 30% prix actuel
         return round(row["moy"] * 0.7 + prix_actuel * 0.3, 3)
 
     return prix_actuel
@@ -193,12 +133,9 @@ def _calculer_promo_score(prix_actuel: float, prix_moyen: float) -> float:
     """
     promo_score = (prix_moyen - prix_actuel) / prix_moyen
 
-    Interpretation :
-      > 0.15  : promotion interessante (>15% de reduction)
-      0 - 0.15: prix normal
-      < 0     : prix plus eleve que d habitude
-
-    Source : logique metier interne
+    > 0.15 : promotion intéressante
+    0-0.15 : prix normal
+    < 0    : prix plus élevé que d'habitude
     """
     if prix_moyen <= 0:
         return 0.0
@@ -206,7 +143,7 @@ def _calculer_promo_score(prix_actuel: float, prix_moyen: float) -> float:
 
 
 # ------------------------------------------------------------
-# MISE A JOUR D UN ALIMENT
+# MISE À JOUR D'UN ALIMENT
 # ------------------------------------------------------------
 def _mettre_a_jour_aliment(
     conn        : sqlite3.Connection,
@@ -216,17 +153,15 @@ def _mettre_a_jour_aliment(
     prix_actuel : float,
 ) -> dict:
     """
-    Met a jour le cout_kg dans aliments
-    et insere un enregistrement dans historique_prix.
-
-    Retourne un dictionnaire avec les details de la mise a jour.
+    Met à jour cout_kg dans aliments et insère
+    un enregistrement dans historique_prix.
     """
     cursor     = conn.cursor()
     maintenant = datetime.now()
     semaine    = maintenant.isocalendar()[1]
     annee      = maintenant.year
 
-    # Verifier si un releve existe deja cette semaine
+    # Vérifier si un relevé existe déjà cette semaine
     cursor.execute("""
         SELECT id FROM historique_prix
         WHERE aliment_id = ?
@@ -241,7 +176,6 @@ def _mettre_a_jour_aliment(
     promo_score = _calculer_promo_score(prix_actuel, prix_moyen)
 
     if existe_deja:
-        # Mettre a jour l enregistrement existant
         cursor.execute("""
             UPDATE historique_prix
             SET prix_actuel = ?,
@@ -256,7 +190,6 @@ def _mettre_a_jour_aliment(
             existe_deja["id"]
         ))
     else:
-        # Inserer un nouvel enregistrement
         cursor.execute("""
             INSERT INTO historique_prix (
                 aliment_id, nom_aliment, magasin,
@@ -270,7 +203,7 @@ def _mettre_a_jour_aliment(
             semaine, annee
         ))
 
-    # Mettre a jour le cout_kg dans la table aliments
+    # Mettre à jour cout_kg dans aliments
     cursor.execute("""
         UPDATE aliments
         SET cout_kg = ?
@@ -291,112 +224,154 @@ def _mettre_a_jour_aliment(
 
 
 # ------------------------------------------------------------
-# NETTOYAGE HISTORIQUE ANCIEN
+# NETTOYAGE HISTORIQUE ANCIEN — Corrigé
 # ------------------------------------------------------------
 def _nettoyer_historique(conn: sqlite3.Connection) -> None:
     """
-    Supprime les releves de prix plus anciens que
+    Supprime les relevés plus anciens que
     NB_SEMAINES_HISTORIQUE_PRIX semaines.
+
+    ✅ Fix : syntaxe SQLite datetime() correcte.
     """
     cursor = conn.cursor()
     cursor.execute("""
         DELETE FROM historique_prix
-        WHERE date_releve < datetime('now', ? || ' weeks')
-    """, (f"-{NB_SEMAINES_HISTORIQUE_PRIX}",))
+        WHERE date_releve < datetime('now', ?)
+    """, (f"-{NB_SEMAINES_HISTORIQUE_PRIX} weeks",))
+
     nb_supprimes = cursor.rowcount
     conn.commit()
 
     if nb_supprimes > 0:
-        print(f"[OK] {nb_supprimes} releves anciens supprimes de l historique")
+        print(f"[OK] {nb_supprimes} relevés anciens supprimés")
 
 
 # ------------------------------------------------------------
-# FONCTION PRINCIPALE
+# MISE À JOUR DEPUIS LES RÉSULTATS PRICER
+# Nouvelle fonction — remplace l'ancienne lecture Excel
 # ------------------------------------------------------------
-def mettre_a_jour_prix() -> list:
+def mettre_a_jour_depuis_pricer(resultats_pricer: list) -> list:
     """
-    Fonction principale de mise a jour des prix.
+    Met à jour nutrition.db depuis les résultats
+    du Pricer (prix récupérés via Piloterr).
 
-    Lit prix.xlsx -> met a jour nutrition.db
-    Retourne la liste des mises a jour effectuees.
+    Appelée par pipeline_prix.py après le pricing.
+
+    resultats_pricer : liste de recettes avec leurs ingrédients
+    [
+        {
+            "recette_id" : 42,
+            "ingredients": [
+                {
+                    "nom_en"    : "chicken breast",
+                    "nom_fr"    : "blanc de poulet",
+                    "prix_kg"   : 9.50,
+                    "magasin"   : "leclerc",
+                    "trouve"    : True,
+                },
+                ...
+            ]
+        },
+        ...
+    ]
     """
-    print("\n[...] Mise a jour des prix alimentaires...")
+    print("\n[...] Mise à jour des prix dans nutrition.db...")
 
-    conn = _get_connection()
-
-    # Creer la table si elle n existe pas
-    _create_table_prix(conn)
-
-    # Nettoyer l historique ancien
-    _nettoyer_historique(conn)
-
-    # Lire les prix depuis Excel
-    prix_excel = _lire_prix_excel()
-
-    if not prix_excel:
-        print("[WARN] Aucun prix a mettre a jour.")
-        conn.close()
+    if not NUTRITION_DB.exists():
+        print(f"[ERREUR] nutrition.db introuvable : {NUTRITION_DB}")
         return []
 
-    resultats    = []
-    mis_a_jour   = 0
-    non_trouves  = []
-    en_promo     = []
+    conn = _get_connection()
+    _create_table_prix(conn)
+    _nettoyer_historique(conn)
 
-    for entree in prix_excel:
-        nom         = entree["nom"]
-        magasin     = entree["magasin"]
-        prix_actuel = entree["prix"]
+    resultats   = []
+    mis_a_jour  = 0
+    non_trouves = []
 
-        # Chercher l aliment en base
-        aliment = _trouver_aliment(conn, nom)
+    # Extraire tous les ingrédients uniques des recettes
+    ingredients_vus = {}
 
-        if aliment is None:
-            non_trouves.append(nom)
-            continue
+    for recette in resultats_pricer:
+        for ing in recette.get("ingredients", []):
+            if not ing.get("trouve"):
+                continue
 
-        # Mettre a jour
-        resultat = _mettre_a_jour_aliment(
-            conn,
-            aliment["id"],
-            aliment["nom"],
-            magasin,
-            prix_actuel,
-        )
+            nom_en  = ing.get("nom_en", "")
+            nom_fr  = ing.get("nom_fr", "")
+            prix_kg = ing.get("prix_kg", 0)
+            magasin = ing.get("magasin", "")
 
-        resultats.append(resultat)
-        mis_a_jour += 1
+            # Dédoublonner par nom_en
+            if nom_en in ingredients_vus:
+                continue
+            ingredients_vus[nom_en] = True
 
-        if resultat["en_promo"]:
-            en_promo.append(resultat)
+            # Chercher dans nutrition.db
+            # Essai nom_fr d'abord, puis nom_en
+            aliment = _trouver_aliment(conn, nom_fr) or \
+                      _trouver_aliment(conn, nom_en)
+
+            if aliment is None:
+                non_trouves.append(nom_en)
+                continue
+
+            resultat = _mettre_a_jour_aliment(
+                conn,
+                aliment["id"],
+                aliment["nom"],
+                magasin,
+                prix_kg,
+            )
+            resultats.append(resultat)
+            mis_a_jour += 1
 
     conn.close()
 
     # Rapport
-    print(f"\n[OK] Prix mis a jour : {mis_a_jour}")
-
-    if en_promo:
-        print(f"\n  Promotions detectees ({len(en_promo)}) :")
-        for r in sorted(en_promo, key=lambda x: x["promo_score"], reverse=True):
-            print(
-                f"    {r['nom']:<40}"
-                f" {r['prix_actuel']:.2f} e/kg"
-                f" (moy: {r['prix_moyen']:.2f} e/kg)"
-                f" -> -{r['promo_score']*100:.0f}%"
-            )
+    print(f"[OK] Aliments mis à jour : {mis_a_jour}")
 
     if non_trouves:
-        print(f"\n  Aliments non trouves en base ({len(non_trouves)}) :")
+        print(f"\n  Non trouvés en nutrition.db ({len(non_trouves)}) :")
         for nom in non_trouves:
-            print(f"    -> {nom}")
-        print(f"  [INFO] Verifiez l orthographe dans prix.xlsx")
+            print(f"    → {nom}")
 
     return resultats
+
+
+# ------------------------------------------------------------
+# FONCTION PRINCIPALE — Conservée pour compatibilité
+# Appelée depuis pipeline_prix.py
+# ------------------------------------------------------------
+def mettre_a_jour_prix() -> list:
+    """
+    Point d'entrée appelé par pipeline_prix.py.
+    Sans argument car les prix viennent du Pricer.
+
+    ⚠️ Sans résultats Pricer passés en argument,
+    cette fonction ne fait que nettoyer l'historique.
+    Utilisez mettre_a_jour_depuis_pricer() depuis
+    pipeline_prix.py pour la mise à jour complète.
+    """
+    print("\n[...] Nettoyage historique prix...")
+
+    if not NUTRITION_DB.exists():
+        print(f"[ERREUR] nutrition.db introuvable : {NUTRITION_DB}")
+        return []
+
+    conn = _get_connection()
+    _create_table_prix(conn)
+    _nettoyer_historique(conn)
+    conn.close()
+
+    print("[OK] Historique nettoyé.")
+    return []
 
 
 # ------------------------------------------------------------
 # TEST AUTONOME
 # ------------------------------------------------------------
 if __name__ == "__main__":
-    resultats = mettre_a_jour_prix()
-    print(f"\n  Total traite : {len(resultats)} aliments")
+    print("[TEST] Updater — nettoyage historique")
+    mettre_a_jour_prix()
+    print("[OK] Test terminé.")

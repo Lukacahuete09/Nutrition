@@ -1,40 +1,33 @@
 # ============================================================
-# CONFIGURATION DU PLANIFICATEUR WINDOWS
+# GESTIONNAIRE DE PLANIFICATION
 # scripts/scheduler.py
-#
-# Installe une tache planifiee Windows qui lance
-# run_weekly.py tous les dimanches a 15h00
-#
-# Lancer UNE SEULE FOIS en tant qu administrateur :
-#   python scripts/scheduler.py install
-#
-# Pour desinstaller :
-#   python scripts/scheduler.py uninstall
-#
-# Pour tester immediatement :
-#   python scripts/scheduler.py run
 # ============================================================
 
 import sys
 import os
 import subprocess
 import argparse
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.resolve()))
 sys.dont_write_bytecode = True
 
+from config import MAGASIN_DEFAUT, LOGS_DIR, ROOT_DIR
+
+# ------------------------------------------------------------
+# CONSTANTES
+# ------------------------------------------------------------
 TASK_NAME    = "NutritionSportive_Weekly"
-SCRIPT_PATH  = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "run_weekly.py")
-)
+SCRIPT_PATH  = ROOT_DIR / "scripts" / "run_weekly.py"
+MAIN_PATH    = ROOT_DIR / "main.py"
 PYTHON_PATH  = sys.executable
 HEURE        = "15:00"
-JOUR_SEMAINE = "DIM"   # Dimanche en francais Windows
+JOUR_SEMAINE = "DIM"
 
 
+# ------------------------------------------------------------
+# WINDOWS — Tâche planifiée
+# ------------------------------------------------------------
 def installer_tache():
-    """
-    Installe la tache planifiee Windows.
-    Necessite les droits administrateur.
-    """
     commande = [
         "schtasks", "/create",
         "/tn",  TASK_NAME,
@@ -42,90 +35,92 @@ def installer_tache():
         "/sc",  "WEEKLY",
         "/d",   JOUR_SEMAINE,
         "/st",  HEURE,
-        "/f",                    # forcer si existe deja
-        "/rl",  "HIGHEST",       # niveau le plus eleve
+        "/f",
+        "/rl",  "HIGHEST",
     ]
 
-    print(f"[...] Installation tache planifiee : {TASK_NAME}")
+    print(f"[...] Installation tâche planifiée : {TASK_NAME}")
     print(f"      Script  : {SCRIPT_PATH}")
     print(f"      Python  : {PYTHON_PATH}")
-    print(f"      Horaire : Dimanche a {HEURE}")
+    print(f"      Horaire : Dimanche à {HEURE}")
+    print(f"      Magasin : {MAGASIN_DEFAUT.upper()}")
 
     result = subprocess.run(commande, capture_output=True, text=True)
 
     if result.returncode == 0:
-        print(f"[OK] Tache installee avec succes.")
-        print(f"     Prochain lancement : dimanche prochain a {HEURE}")
+        print(f"[OK] Tâche installée avec succès.")
+        print(f"     Prochain lancement : dimanche prochain à {HEURE}")
     else:
         print(f"[ERREUR] {result.stderr}")
-        print(f"[INFO]   Relancez en tant qu administrateur.")
+        print(f"[INFO]   Relancez en tant qu'administrateur.")
 
 
 def desinstaller_tache():
-    """
-    Supprime la tache planifiee Windows.
-    """
-    commande = [
-        "schtasks", "/delete",
-        "/tn", TASK_NAME,
-        "/f"
-    ]
+    commande = ["schtasks", "/delete", "/tn", TASK_NAME, "/f"]
 
-    print(f"[...] Suppression tache planifiee : {TASK_NAME}")
+    print(f"[...] Suppression tâche planifiée : {TASK_NAME}")
     result = subprocess.run(commande, capture_output=True, text=True)
 
     if result.returncode == 0:
-        print(f"[OK] Tache supprimee.")
+        print(f"[OK] Tâche supprimée.")
     else:
         print(f"[ERREUR] {result.stderr}")
 
 
 def verifier_tache():
-    """
-    Verifie si la tache est bien installee.
-    """
     commande = ["schtasks", "/query", "/tn", TASK_NAME, "/fo", "LIST"]
     result   = subprocess.run(commande, capture_output=True, text=True)
 
     if result.returncode == 0:
-        print(f"[OK] Tache trouvee :")
+        print(f"[OK] Tâche trouvée :")
         print(result.stdout)
     else:
-        print(f"[INFO] Tache non trouvee. Lancez : python scheduler.py install")
+        print(f"[INFO] Tâche non trouvée.")
+        print(f"       Lancez : python scripts/scheduler.py install")
 
 
 def lancer_maintenant():
     """
-    Lance le script immediatement pour tester.
+    Lance directement main.py run
+    sans passer par run_weekly.py
     """
-    print(f"[...] Lancement immediat du script...")
+    print(f"[...] Lancement immédiat via main.py...")
     result = subprocess.run(
-        [PYTHON_PATH, SCRIPT_PATH],
-        capture_output=False
+        [
+            PYTHON_PATH,
+            str(MAIN_PATH),
+            "run",
+            "--magasin", MAGASIN_DEFAUT,
+        ],
+        capture_output = False,
+        cwd            = str(ROOT_DIR),
     )
     if result.returncode == 0:
-        print(f"[OK] Execution terminee.")
+        print(f"[OK] Exécution terminée.")
     else:
         print(f"[ERREUR] Code retour : {result.returncode}")
 
 
+# ------------------------------------------------------------
+# POINT D'ENTRÉE
+# ------------------------------------------------------------
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Gestionnaire de tache planifiee Nutrition Sportive"
+        description="Gestionnaire de planification — Nutrition Sportive"
     )
     parser.add_argument(
         "action",
-        choices=["install", "uninstall", "check", "run"],
-        help=(
-            "install   : installe la tache planifiee\n"
-            "uninstall : supprime la tache planifiee\n"
-            "check     : verifie l installation\n"
-            "run       : lance le script immediatement"
+        choices = ["install", "uninstall", "check", "run"],
+        help    = (
+            "install   : installe la tâche planifiée Windows\n"
+            "uninstall : supprime la tâche planifiée Windows\n"
+            "check     : vérifie l'installation Windows\n"
+            "run       : lance le pipeline immédiatement\n"
         )
     )
     args = parser.parse_args()
 
-    if args.action == "install":
+    if   args.action == "install":
         installer_tache()
     elif args.action == "uninstall":
         desinstaller_tache()

@@ -3,10 +3,23 @@
 # optimisation/excel/reader.py
 # ============================================================
 
-import os
 import sys
 import openpyxl
+from pathlib import Path
 sys.dont_write_bytecode = True
+
+ROOT_DIR = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT_DIR))
+
+from config import EXCEL_CONFIG_PATH, MAGASIN_FALLBACK
+
+# ------------------------------------------------------------
+# MAGASINS VALIDES
+# ------------------------------------------------------------
+MAGASINS_VALIDES = {
+    "leclerc" : "leclerc",
+    "auchan"  : "auchan",
+}
 
 
 # ------------------------------------------------------------
@@ -50,16 +63,30 @@ def _is_oui(ws, row, col) -> bool:
 
 
 # ------------------------------------------------------------
+# NORMALISATION MAGASIN
+# ------------------------------------------------------------
+def _normaliser_magasin(valeur: str) -> str:
+    """
+    Normalise la valeur Excel vers le code interne.
+    Ex: "Leclerc" → "leclerc"
+        "AUCHAN"  → "auchan"
+        ""        → MAGASIN_FALLBACK
+    """
+    if not valeur:
+        print(f"[WARN] Magasin non renseigné → fallback : {MAGASIN_FALLBACK}")
+        return MAGASIN_FALLBACK
+
+    valeur_clean = valeur.strip().lower()
+
+    if valeur_clean in MAGASINS_VALIDES:
+        return MAGASINS_VALIDES[valeur_clean]
+
+    print(f"[WARN] Magasin inconnu '{valeur}' → fallback : {MAGASIN_FALLBACK}")
+    return MAGASIN_FALLBACK
+
+
+# ------------------------------------------------------------
 # LECTURE FEUILLE PROFIL
-# Structure :
-#   Ligne 1  : titre
-#   Ligne 2  : sous-titre
-#   Ligne 3  : separateur "Informations personnelles"
-#   Lignes 4-9  : labels col1/col4 + valeurs col2/col5
-#   Ligne 10 : separateur "Parametres sportifs"
-#   Lignes 11-14 : labels col1 + valeurs col2
-#   Ligne 15 : separateur "Contraintes alimentaires"
-#   Lignes 16-20 : labels col1 + valeurs col2
 # ------------------------------------------------------------
 def _read_profil(ws) -> dict:
     return {
@@ -95,14 +122,6 @@ def _read_profil(ws) -> dict:
 
 # ------------------------------------------------------------
 # LECTURE FEUILLE PLANNING
-# Structure :
-#   Ligne 3  : header
-#   Lignes 4-10 : 7 jours
-#     col1 = Jour
-#     col2 = Type de seance
-#     col3 = Intensite
-#     col4 = Duree (min)
-#     col5 = Notes
 # ------------------------------------------------------------
 def _read_planning(ws) -> list:
     planning = []
@@ -123,25 +142,6 @@ def _read_planning(ws) -> list:
 
 # ------------------------------------------------------------
 # LECTURE FEUILLE NUTRITION
-# Structure :
-#   Ligne 3  : separateur "Proteines"
-#   Ligne 4  : Proteines minimum        col2
-#   Ligne 5  : Proteines maximum        col2
-#   Ligne 6  : separateur "Lipides"
-#   Ligne 7  : Lipides minimum          col2
-#   Ligne 8  : separateur "Calories"
-#   Ligne 9  : Deficit entrainement     col2
-#   Ligne 10 : Deficit repos            col2
-#   Ligne 11 : Calories minimum         col2
-#   Ligne 12 : Repas par jour           col2
-#   Ligne 13 : separateur "Glucides"
-#   Ligne 14 : header tableau glucides
-#   Lignes 15-20 : glucides par seance
-#     col1 = Type seance
-#     col2 = Glucides min (g/kg)
-#     col3 = Glucides max (g/kg)
-#     col4 = Moment cle
-#     col5 = Notes
 # ------------------------------------------------------------
 def _read_nutrition(ws) -> dict:
     nutrition = {
@@ -170,23 +170,18 @@ def _read_nutrition(ws) -> dict:
 
 # ------------------------------------------------------------
 # LECTURE FEUILLE BUDGET
-# Structure :
-#   Ligne 3  : separateur "Limites budgetaires"
-#   Ligne 4  : Budget hebdomadaire      col2
-#   Ligne 5  : Budget quotidien         col2
-#   Ligne 6  : Budget par repas         col2
-#   Ligne 7  : separateur "Preferences"
-#   Ligne 8  : Magasin prefere          col2
-#   Ligne 9  : Priorite promotions      col2
-#   Ligne 10 : Produits bio             col2
-#   Ligne 11 : Marque distributeur      col2
+# Inclut maintenant la normalisation du magasin
 # ------------------------------------------------------------
 def _read_budget(ws) -> dict:
+    magasin_raw = _get_str(ws, 8, 2, MAGASIN_FALLBACK)
+    magasin     = _normaliser_magasin(magasin_raw)
+
     return {
         "budget_hebdo_max"     : _get_float(ws,  4, 2, 80.0),
         "budget_quotidien_max" : _get_float(ws,  5, 2, 12.0),
         "budget_repas_max"     : _get_float(ws,  6, 2,  4.0),
-        "magasin_prefere"      : _get_str  (ws,  8, 2, "Leclerc"),
+        "magasin"              : magasin,        # ✅ Normalisé
+        "magasin_raw"          : magasin_raw,    # ✅ Valeur brute Excel
         "priorite_promotions"  : _get_str  (ws,  9, 2, "Oui"),
         "bio_accepte"          : _get_str  (ws, 10, 2, "Non"),
         "marque_distributeur"  : _get_str  (ws, 11, 2, "Oui"),
@@ -195,14 +190,6 @@ def _read_budget(ws) -> dict:
 
 # ------------------------------------------------------------
 # LECTURE FEUILLE ALIMENTS EXCLUS
-# Structure :
-#   Ligne 3  : header
-#   Lignes 4+ : aliments exclus
-#     col1 = N
-#     col2 = Nom ou mot-cle
-#     col3 = Type exclusion (exact / contient / categorie)
-#     col4 = Raison
-#     col5 = Date ajout
 # ------------------------------------------------------------
 def _read_aliments_exclus(ws) -> list:
     aliments_exclus = []
@@ -222,17 +209,6 @@ def _read_aliments_exclus(ws) -> list:
 
 # ------------------------------------------------------------
 # LECTURE FEUILLE STRUCTURE REPAS
-# Structure :
-#   Ligne 3  : header
-#   Ligne 4  : separateur petit-dej
-#   Ligne 5  : nb recettes petit-dej    col2=semaine col3=weekend
-#   Ligne 6  : batch cooking petit-dej  col2=semaine col3=weekend
-#   Ligne 7  : separateur dejeuner
-#   Ligne 8  : nb recettes dejeuner     col2=semaine col3=weekend
-#   Ligne 9  : batch cooking dejeuner   col2=semaine col3=weekend
-#   Ligne 10 : separateur diner
-#   Ligne 11 : nb recettes diner        col2=semaine col3=weekend
-#   Ligne 12 : batch cooking diner      col2=semaine col3=weekend
 # ------------------------------------------------------------
 def _read_structure_repas(ws) -> dict:
     return {
@@ -268,51 +244,9 @@ def _read_structure_repas(ws) -> dict:
 
 
 # ------------------------------------------------------------
-# VALIDATION DU PROFIL
-# ------------------------------------------------------------
-def _valider_profil(profil: dict) -> list:
-    erreurs = []
-
-    champs_obligatoires = {
-        "age"            : "Age",
-        "sexe"           : "Sexe",
-        "taille_cm"      : "Taille",
-        "poids_actuel_kg": "Poids actuel",
-        "poids_cible_kg" : "Poids cible",
-        "sport"          : "Sport pratique",
-        "objectif"       : "Objectif",
-    }
-
-    for champ, label in champs_obligatoires.items():
-        val = profil.get(champ)
-        if not val or val == 0:
-            erreurs.append(f"[ERREUR] Champ obligatoire manquant : {label}")
-
-    if profil.get("sexe") not in ["M", "F"]:
-        erreurs.append("[ERREUR] Sexe doit etre 'M' ou 'F'")
-
-    if profil.get("taille_cm", 0) < 100 or profil.get("taille_cm", 0) > 250:
-        erreurs.append("[ERREUR] Taille invalide (doit etre entre 100 et 250 cm)")
-
-    if profil.get("poids_actuel_kg", 0) < 30 or profil.get("poids_actuel_kg", 0) > 250:
-        erreurs.append("[ERREUR] Poids actuel invalide")
-
-    return erreurs
-
-# ------------------------------------------------------------
-# LECTURE FEUILLE RECETTES_EXCLUES
-# Structure :
-#   Ligne 3  : header
-#   Lignes 4+ : recettes exclues
-#     col1 = Nom recette (nom_fr ou nom_en)
-#     col2 = Raison
-#     col3 = Date ajout
+# LECTURE FEUILLE RECETTES EXCLUES
 # ------------------------------------------------------------
 def _read_recettes_exclues(ws) -> list:
-    """
-    Lit la liste des recettes que l athlete
-    ne souhaite plus voir proposees.
-    """
     recettes_exclues = []
 
     for row in range(4, ws.max_row + 1):
@@ -325,34 +259,61 @@ def _read_recettes_exclues(ws) -> list:
             })
 
     return recettes_exclues
+
+
+# ------------------------------------------------------------
+# VALIDATION DU PROFIL
+# ------------------------------------------------------------
+def _valider_profil(profil: dict) -> list:
+    erreurs = []
+
+    champs_obligatoires = {
+        "age"            : "Age",
+        "sexe"           : "Sexe",
+        "taille_cm"      : "Taille",
+        "poids_actuel_kg": "Poids actuel",
+        "poids_cible_kg" : "Poids cible",
+        "sport"          : "Sport pratiqué",
+        "objectif"       : "Objectif",
+    }
+
+    for champ, label in champs_obligatoires.items():
+        val = profil.get(champ)
+        if not val or val == 0:
+            erreurs.append(f"[ERREUR] Champ obligatoire manquant : {label}")
+
+    if profil.get("sexe") not in ["M", "F"]:
+        erreurs.append("[ERREUR] Sexe doit être 'M' ou 'F'")
+
+    if profil.get("taille_cm", 0) < 100 or profil.get("taille_cm", 0) > 250:
+        erreurs.append("[ERREUR] Taille invalide (entre 100 et 250 cm)")
+
+    if profil.get("poids_actuel_kg", 0) < 30 or profil.get("poids_actuel_kg", 0) > 250:
+        erreurs.append("[ERREUR] Poids actuel invalide")
+
+    return erreurs
+
+
 # ------------------------------------------------------------
 # FONCTION PRINCIPALE
 # ------------------------------------------------------------
 def lire_config_athlete() -> dict:
     """
-    Lit l integralite du fichier athlete_config.xlsm
-    et retourne un dictionnaire structure utilisable
-    par tous les modules du moteur d optimisation.
+    Lit l'intégralité du fichier athlete_config.xlsm
+    et retourne un dictionnaire structuré.
+
+    Le magasin est lu depuis la feuille BUDGET (ligne 8)
+    et normalisé automatiquement.
     """
-    # Gestion du path selon mode d execution
-    if os.path.exists("optimisation/data/athlete_config.xlsm"):
-        config_path = "optimisation/data/athlete_config.xlsm"
-    else:
-        config_path = os.path.join(
-            os.path.dirname(__file__),
-            "..", "data", "athlete_config.xlsm"
-        )
-        config_path = os.path.abspath(config_path)
-
-    if not os.path.exists(config_path):
+    if not EXCEL_CONFIG_PATH.exists():
         raise FileNotFoundError(
-            f"[ERREUR] Fichier de configuration introuvable : {config_path}\n"
-            f"[INFO]   Lancez scripts/create_excel_config.py pour le generer."
+            f"[ERREUR] Fichier de configuration introuvable : {EXCEL_CONFIG_PATH}\n"
+            f"[INFO]   Placez athlete_config.xlsm dans optimisation/data/"
         )
 
-    print(f"[...] Lecture de la configuration : {config_path}")
+    print(f"[...] Lecture configuration : {EXCEL_CONFIG_PATH.name}")
 
-    wb = openpyxl.load_workbook(config_path, data_only=True)
+    wb = openpyxl.load_workbook(EXCEL_CONFIG_PATH, data_only=True)
 
     profil          = _read_profil         (wb["PROFIL"])
     planning        = _read_planning       (wb["PLANNING"])
@@ -360,13 +321,8 @@ def lire_config_athlete() -> dict:
     budget          = _read_budget         (wb["BUDGET"])
     aliments_exclus = _read_aliments_exclus(wb["ALIMENTS_EXCLUS"])
     structure_repas = _read_structure_repas(wb["STRUCTURE_REPAS"])
-
-    # Lecture recettes exclues
-    # La feuille est optionnelle -> creee au premier "Changer"
-    if "RECETTES_EXCLUES" in wb.sheetnames:
-        recettes_exclues = _read_recettes_exclues(wb["RECETTES_EXCLUES"])
-    else:
-        recettes_exclues = []
+    recettes_exclues = _read_recettes_exclues(wb["RECETTES_EXCLUES"]) \
+                       if "RECETTES_EXCLUES" in wb.sheetnames else []
 
     wb.close()
 
@@ -375,7 +331,7 @@ def lire_config_athlete() -> dict:
     if erreurs:
         for e in erreurs:
             print(e)
-        raise ValueError("[ERREUR] Configuration incomplete.")
+        raise ValueError("[ERREUR] Configuration incomplète.")
 
     config = {
         "profil"           : profil,
@@ -384,18 +340,18 @@ def lire_config_athlete() -> dict:
         "budget"           : budget,
         "aliments_exclus"  : aliments_exclus,
         "structure_repas"  : structure_repas,
-        "recettes_exclues" : recettes_exclues,   # nouveau
+        "recettes_exclues" : recettes_exclues,
     }
 
-    # Affichage recapitulatif
-    print(f"[OK] Configuration chargee pour : {profil.get('nom', 'Athlete')}")
-    print(f"     Poids actuel    : {profil['poids_actuel_kg']} kg")
-    print(f"     Poids cible     : {profil['poids_cible_kg']} kg")
-    print(f"     Sport           : {profil['sport']}")
-    print(f"     Seances/sem     : {len([j for j in planning if j['seance'].lower() != 'repos'])}")
-    print(f"     Budget hebdo    : {budget['budget_hebdo_max']} euros")
-    print(f"     Aliments exclus : {len(aliments_exclus)}")
-    print(f"     Recettes exclues: {len(recettes_exclues)}")
+    # Récapitulatif
+    print(f"[OK] Configuration chargée : {profil.get('nom', 'Athlète')}")
+    print(f"     Poids actuel     : {profil['poids_actuel_kg']} kg")
+    print(f"     Poids cible      : {profil['poids_cible_kg']} kg")
+    print(f"     Sport            : {profil['sport']}")
+    print(f"     Magasin          : {budget['magasin'].upper()}")
+    print(f"     Budget hebdo     : {budget['budget_hebdo_max']} €")
+    print(f"     Aliments exclus  : {len(aliments_exclus)}")
+    print(f"     Recettes exclues : {len(recettes_exclues)}")
 
     return config
 
@@ -404,39 +360,24 @@ def lire_config_athlete() -> dict:
 # TEST AUTONOME
 # ------------------------------------------------------------
 if __name__ == "__main__":
-    sys.path.insert(0, os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..")
-    ))
-
     config = lire_config_athlete()
 
     print("\n--- PROFIL ---")
     for k, v in config["profil"].items():
         print(f"  {k:<30} : {v}")
 
+    print("\n--- BUDGET & MAGASIN ---")
+    for k, v in config["budget"].items():
+        print(f"  {k:<30} : {v}")
+
     print("\n--- PLANNING ---")
     for jour in config["planning"]:
         print(f"  {jour['jour']:<12} {jour['seance']:<35} {jour['intensite']}")
 
-    print("\n--- NUTRITION ---")
-    for k, v in config["nutrition"].items():
-        if k != "glucides_par_seance":
-            print(f"  {k:<30} : {v}")
-
-    print("\n--- GLUCIDES PAR SEANCE ---")
+    print("\n--- GLUCIDES PAR SÉANCE ---")
     for seance, val in config["nutrition"]["glucides_par_seance"].items():
         print(f"  {seance:<25} min:{val['min_g_kg']} max:{val['max_g_kg']} g/kg")
-
-    print("\n--- BUDGET ---")
-    for k, v in config["budget"].items():
-        print(f"  {k:<30} : {v}")
 
     print("\n--- ALIMENTS EXCLUS ---")
     for a in config["aliments_exclus"]:
         print(f"  [{a['type_exclusion']:<10}] {a['nom']}")
-
-    print("\n--- STRUCTURE REPAS ---")
-    for periode, repas in config["structure_repas"].items():
-        print(f"  {periode} :")
-        for type_repas, params in repas.items():
-            print(f"    {type_repas:<12} : {params['nb_recettes']} recette(s) — batch : {params['batch_cooking']}")

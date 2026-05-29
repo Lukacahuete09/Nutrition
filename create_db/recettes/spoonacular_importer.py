@@ -5,13 +5,15 @@
 
 import sys
 import os
-import sqlite3
 import requests
 import time
+import sqlite3
+from pathlib import Path
 from datetime import datetime
 sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.resolve()))
 
-from config_recettes import (
+from config import (
     SPOONACULAR_KEY,
     REQUETES_RECETTES,
     NB_RECETTES_PETIT_DEJ,

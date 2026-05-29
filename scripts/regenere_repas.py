@@ -20,10 +20,6 @@ import logging
 from datetime import datetime
 sys.dont_write_bytecode = True
 
-# Logging
-LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs")
-os.makedirs(LOG_DIR, exist_ok=True)
-
 logging.basicConfig(
     level    = logging.INFO,
     format   = "%(asctime)s [%(levelname)s] %(message)s",

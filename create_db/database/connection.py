@@ -1,8 +1,12 @@
 # ============================================================
 # GESTION DE LA CONNEXION SQLITE
 # ============================================================
-
+import sys
 import sqlite3
+
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.resolve()))
+
 from config import DB_PATH
 
 
