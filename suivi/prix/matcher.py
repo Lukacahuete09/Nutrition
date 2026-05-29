@@ -23,7 +23,7 @@ from config import (
     CACHE_PRIX_JOURS,
 )
 from suivi.prix.api.cache_manager    import CacheManager
-from suivi.prix.api.piloterr_client  import PiloterrClient 
+from suivi.prix.api.piloter_client  import PiloterClient 
 
 
 # ------------------------------------------------------------
@@ -140,7 +140,7 @@ class Matcher:
     def __init__(self, magasin: str = MAGASIN_FALLBACK):  
         self.magasin = magasin
         self.cache   = CacheManager()
-        self.client  = PiloterrClient(magasin=magasin)    
+        self.client  = PiloterClient(magasin=magasin)    
 
     # ----------------------------------------------------------
     # MÉTHODE PRINCIPALE
