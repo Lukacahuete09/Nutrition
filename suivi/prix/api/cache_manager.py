@@ -1,10 +1,9 @@
 import sqlite3
 import os
 import sys
+from pathlib import Path
 from datetime import datetime, timedelta
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.resolve()))
 from config import NUTRITION_DB, CACHE_PRIX_JOURS
 
 

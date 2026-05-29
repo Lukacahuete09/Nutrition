@@ -11,9 +11,7 @@ from openpyxl.utils import get_column_letter
 from datetime import datetime
 sys.dont_write_bytecode = True
 
-sys.path.insert(0, os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..")
-))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.resolve()))
 from suivi.config import EXCEL_CONFIG_PATH
 
 

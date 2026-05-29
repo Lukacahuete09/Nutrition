@@ -1,15 +1,14 @@
 import requests
 import sys
 import os
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__)))))
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.resolve()))
 
 from config import PILOTERR_API_KEY
 from suivi.prix.api.base_client import BaseMarketClient
 
 
-class PiloterrClient(BaseMarketClient):
+class PiloterClient(BaseMarketClient):
     """
     Client Piloterr unifié pour Leclerc et Auchan.
     Documentation : https://piloterr.com/docs
