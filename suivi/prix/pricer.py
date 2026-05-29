@@ -1,38 +1,38 @@
 # ============================================================
-# MATCHING INGRÉDIENTS → PRODUITS MAGASIN
-# suivi/prix/matcher.py
+# CALCUL DU COÛT PAR RECETTE
+# suivi/prix/pricer.py
 # ============================================================
 
 import sys
-import re
 import sqlite3
 from pathlib import Path
 sys.dont_write_bytecode = True
 
 # ------------------------------------------------------------
-# RACINE DU PROJET — 3 niveaux au dessus de matcher.py
-# suivi/prix/matcher.py → suivi/prix/ → suivi/ → NUTRITION/
+# RACINE DU PROJET
+# suivi/prix/pricer.py → suivi/prix/ → suivi/ → NUTRITION/
 # ------------------------------------------------------------
-ROOT_DIR = Path(__file__).parent.parent.parent.resolve()
+ROOT_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT_DIR))
 
 from config import (
     RECETTES_DB,
     NUTRITION_DB,
-    MAGASIN_DEFAUT,
+    MAGASIN_FALLBACK,       # ✅ FALLBACK pas DEFAUT
 )
 from suivi.prix.matcher import Matcher
+
+
 # ============================================================
 # CLASSE PRINCIPALE
 # ============================================================
-
 class Pricer:
     """
     Calcule le coût réel d'une recette en récupérant
     les prix de chaque ingrédient via le Matcher.
     """
 
-    def __init__(self, magasin: str = MAGASIN_DEFAUT):
+    def __init__(self, magasin: str = MAGASIN_FALLBACK):   # ✅ FALLBACK
         self.magasin = magasin
         self.matcher = Matcher(magasin=magasin)
 
@@ -40,24 +40,6 @@ class Pricer:
     # CALCUL COÛT D'UNE RECETTE
     # ----------------------------------------------------------
     def calculer_cout_recette(self, recette_id: int) -> dict:
-        """
-        Calcule le coût total d'une recette.
-
-        Retourne :
-        {
-            "recette_id"      : 42,
-            "nom"             : "Chicken Rice Bowl",
-            "nb_ingredients"  : 6,
-            "nb_trouves"      : 5,
-            "nb_non_trouves"  : 1,
-            "cout_total"      : 3.45,
-            "cout_portion"    : 3.45,
-            "couverture_pct"  : 83.3,
-            "ingredients"     : [ ... ],
-            "magasin"         : "leclerc",
-        }
-        """
-        # Récupérer le nom de la recette
         conn             = sqlite3.connect(RECETTES_DB)
         conn.row_factory = sqlite3.Row
         cursor           = conn.cursor()
@@ -75,29 +57,26 @@ class Pricer:
             print(f"[ERREUR] Recette {recette_id} introuvable.")
             return {}
 
-        nom        = recette["nom_fr"] or recette["nom_en"] or f"Recette {recette_id}"
-        nb_pers    = recette["nb_personnes"] or 1
+        nom     = recette["nom_fr"] or recette["nom_en"] or f"Recette {recette_id}"
+        nb_pers = recette["nb_personnes"] or 1
 
         print(f"\n[PRICER] Calcul coût : {nom}")
         print(f"         Magasin     : {self.magasin.upper()}")
 
-        # Matcher tous les ingrédients
         resultats_match = self.matcher.matcher_ingredients_recette(recette_id)
 
-        # Calculer le coût total
-        details      = []
-        cout_total   = 0.0
-        nb_trouves   = 0
+        details        = []
+        cout_total     = 0.0
+        nb_trouves     = 0
         nb_non_trouves = 0
 
         for match in resultats_match:
-            nom_en     = match["nom_en"] or ""
-            nom_fr     = match["nom_fr"] or ""
+            nom_en     = match["nom_en"]     or ""
+            nom_fr     = match["nom_fr"]     or ""
             quantite_g = match["quantite_g"] or 0
             produit    = match["produit"]
 
             if produit and produit.get("prix_kg", 0) > 0:
-                # Coût = (quantité en g / 1000) × prix/kg
                 cout_ingredient = (quantite_g / 1000) * produit["prix_kg"]
                 cout_total     += cout_ingredient
                 nb_trouves     += 1
@@ -113,7 +92,6 @@ class Pricer:
                     "score_match"     : produit.get("score", 0),
                     "trouve"          : True,
                 })
-
             else:
                 nb_non_trouves += 1
                 details.append({
@@ -132,7 +110,6 @@ class Pricer:
         couverture   = (nb_trouves / nb_total * 100) if nb_total > 0 else 0
         cout_portion = round(cout_total / nb_pers, 3)
 
-        # Rapport terminal
         print(f"\n[OK] {nom}")
         print(f"     Ingrédients trouvés : {nb_trouves}/{nb_total} ({couverture:.0f}%)")
         print(f"     Coût total          : {cout_total:.2f} €")
@@ -158,23 +135,7 @@ class Pricer:
     # ----------------------------------------------------------
     # CALCUL COÛT DE PLUSIEURS RECETTES
     # ----------------------------------------------------------
-    def calculer_cout_semaine(self, recette_ids: list[int]) -> dict:
-        """
-        Calcule le coût de toutes les recettes
-        du planning hebdomadaire.
-
-        Retourne :
-        {
-            "nb_recettes"      : 21,
-            "cout_total"       : 72.50,
-            "cout_moyen"       : 3.45,
-            "cout_min"         : 1.80,
-            "cout_max"         : 6.20,
-            "couverture_moy"   : 91.2,
-            "recettes"         : [ ... ],
-            "magasin"          : "leclerc",
-        }
-        """
+    def calculer_cout_semaine(self, recette_ids: list) -> dict:  
         print(f"\n{'='*60}")
         print(f"  CALCUL COÛT SEMAINE — {self.magasin.upper()}")
         print(f"  {len(recette_ids)} recettes à pricer")
@@ -192,8 +153,8 @@ class Pricer:
         if not resultats:
             return {}
 
-        couts         = [r["cout_portion"]   for r in resultats]
-        couvertures   = [r["couverture_pct"] for r in resultats]
+        couts       = [r["cout_portion"]   for r in resultats]
+        couvertures = [r["couverture_pct"] for r in resultats]
 
         rapport = {
             "nb_recettes"    : len(resultats),
@@ -206,7 +167,6 @@ class Pricer:
             "magasin"        : self.magasin,
         }
 
-        # Rapport final
         print(f"\n{'='*60}")
         print(f"  RAPPORT COÛT SEMAINE")
         print(f"{'='*60}")
@@ -224,10 +184,6 @@ class Pricer:
     # MISE À JOUR COÛT EN BASE
     # ----------------------------------------------------------
     def mettre_a_jour_cout_db(self, recette_id: int, cout_portion: float) -> None:
-        """
-        Met à jour le cout_portion dans recettes.db
-        après calcul réel depuis le magasin.
-        """
         conn   = sqlite3.connect(RECETTES_DB)
         cursor = conn.cursor()
 
@@ -248,11 +204,9 @@ class Pricer:
 # TEST AUTONOME
 # ============================================================
 if __name__ == "__main__":
-    import sys
 
-    pricer = Pricer(magasin=MAGASIN_DEFAUT)
+    pricer = Pricer(magasin=MAGASIN_FALLBACK) 
 
-    # Récupérer les 3 premières recettes pour tester
     conn             = sqlite3.connect(RECETTES_DB)
     conn.row_factory = sqlite3.Row
     cursor           = conn.cursor()
@@ -265,7 +219,7 @@ if __name__ == "__main__":
         print("       Lancez : python main.py import-recettes")
         sys.exit(0)
 
-    ids = [r["id"] for r in recettes]
+    ids     = [r["id"] for r in recettes]
     rapport = pricer.calculer_cout_semaine(ids)
 
     print(f"\n[OK] Test terminé — {rapport.get('nb_recettes', 0)} recettes pricées")

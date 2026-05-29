@@ -1,13 +1,6 @@
 # ============================================================
 # PIPELINE PRIX — ORCHESTRATEUR COMPLET
 # suivi/prix/pipeline_prix.py
-#
-# Orchestre dans l'ordre :
-#   1. Récupération des recettes du planning courant
-#   2. Matching ingrédients → produits magasin
-#   3. Calcul coût par recette
-#   4. Mise à jour des prix en base (nutrition.db)
-#   5. Rapport final
 # ============================================================
 
 import sys
@@ -22,27 +15,18 @@ sys.path.insert(0, str(ROOT_DIR))
 from config import (
     RECETTES_DB,
     NUTRITION_DB,
-    MAGASIN_DEFAUT,
+    MAGASIN_FALLBACK,
     NB_SEMAINES_HISTORIQUE_PRIX,
 )
-from suivi.prix.pricer  import Pricer
-from suivi.prix.updater import mettre_a_jour_prix
+from optimisation.excel.reader  import lire_config_athlete 
+from suivi.prix.pricer          import Pricer
+from suivi.prix.updater         import mettre_a_jour_depuis_pricer
 
-
-# ============================================================
-# FONCTIONS UTILITAIRES
-# ============================================================
 
 # ------------------------------------------------------------
 # RÉCUPÉRATION DES RECETTES DU PLANNING
 # ------------------------------------------------------------
 def _get_recettes_planning() -> list:
-    """
-    Récupère les recettes du planning hebdomadaire courant
-    depuis recettes.db.
-
-    Retourne une liste de recette_id valides.
-    """
     conn             = sqlite3.connect(RECETTES_DB)
     conn.row_factory = sqlite3.Row
     cursor           = conn.cursor()
@@ -71,9 +55,6 @@ def _get_recettes_planning() -> list:
 # RAPPORT FINAL
 # ------------------------------------------------------------
 def _afficher_rapport(rapport: dict, magasin: str) -> None:
-    """
-    Affiche le rapport complet du pipeline prix.
-    """
     print(f"\n{'='*60}")
     print(f"  RAPPORT PIPELINE PRIX")
     print(f"  {datetime.now().strftime('%d/%m/%Y %H:%M')}")
@@ -87,7 +68,6 @@ def _afficher_rapport(rapport: dict, magasin: str) -> None:
     print(f"  Couverture moy.    : {rapport.get('couverture_moy', 0):.1f}%")
     print(f"{'='*60}")
 
-    # Détail par recette
     recettes = rapport.get("recettes", [])
     if recettes:
         print(f"\n  Détail par recette :")
@@ -101,7 +81,6 @@ def _afficher_rapport(rapport: dict, magasin: str) -> None:
                 f" {r['nb_trouves']:>3}/{r['nb_ingredients']:<3}"
             )
 
-    # Ingrédients non trouvés
     non_trouves = []
     for r in recettes:
         for ing in r.get("ingredients", []):
@@ -110,7 +89,7 @@ def _afficher_rapport(rapport: dict, magasin: str) -> None:
 
     if non_trouves:
         uniques = list(set(non_trouves))
-        print(f"\n  ⚠️  Ingrédients non trouvés ({len(uniques)}) :")
+        print(f"\n Ingrédients non trouvés ({len(uniques)}) :")
         for nom in sorted(uniques):
             print(f"     → {nom}")
         print(f"\n  [INFO] Ajoutez-les dans TRADUCTIONS_EN_FR (matcher.py)")
@@ -123,14 +102,19 @@ def _afficher_rapport(rapport: dict, magasin: str) -> None:
 # ============================================================
 def lancer_pipeline_prix(magasin: str = None) -> dict:
     """
+    Lance le pipeline complet de pricing.
     Magasin lu depuis Excel si non fourni.
     """
     if magasin is None:
-        from excel.reader import lire_config_athlete
-        config  = lire_config_athlete()
-        magasin = config["profil"]["magasin"]
+        try:
+            config  = lire_config_athlete()
+            magasin = config["budget"]["magasin"]  
+            print(f"  Magasin lu depuis Excel : {magasin.upper()}")
+        except Exception as e:
+            print(f"[WARN] Impossible de lire Excel : {e}")
+            print(f"[WARN] Fallback : {MAGASIN_FALLBACK.upper()}")
+            magasin = MAGASIN_FALLBACK
 
-    print(f"  Magasin : {magasin.upper()} (depuis Excel)")
     print(f"\n{'='*60}")
     print(f"  PIPELINE PRIX — {magasin.upper()}")
     print(f"  {datetime.now().strftime('%A %d/%m/%Y %H:%M')}")
@@ -183,7 +167,6 @@ def lancer_pipeline_prix(magasin: str = None) -> dict:
 
         pricer.close()
 
-        # Fusionner le rapport pricer
         rapport.update({
             "nb_recettes"    : rapport_pricer["nb_recettes"],
             "cout_total"     : rapport_pricer["cout_total"],
@@ -195,14 +178,11 @@ def lancer_pipeline_prix(magasin: str = None) -> dict:
         })
 
         # --------------------------------------------------
-        # ÉTAPE 3 — Mise à jour nutrition.db (updater)
+        # ÉTAPE 3 — Mise à jour nutrition.db
         # --------------------------------------------------
         print(f"\n[3/3] Mise à jour des prix dans nutrition.db...")
-        mettre_a_jour_prix()
+        mettre_a_jour_depuis_pricer(rapport_pricer.get("recettes", [])) 
 
-        # --------------------------------------------------
-        # RAPPORT FINAL
-        # --------------------------------------------------
         _afficher_rapport(rapport, magasin)
 
     except Exception as e:
@@ -225,8 +205,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--magasin",
         choices = ["leclerc", "auchan"],
-        default = MAGASIN_DEFAUT,
-        help    = f"Magasin cible (défaut: {MAGASIN_DEFAUT})"
+        default = None,                   
+        help    = "Override magasin Excel"
     )
     args = parser.parse_args()
 

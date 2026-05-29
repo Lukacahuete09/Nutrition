@@ -1,5 +1,5 @@
 # ============================================================
-#  UNIQUE — SYSTÈME NUTRITION SPORTIVE
+# APP — SYSTÈME NUTRITION SPORTIVE
 # ============================================================
 
 import sys
@@ -10,14 +10,14 @@ from datetime import datetime
 sys.dont_write_bytecode = True
 
 # ------------------------------------------------------------
-# IMPORT CONFIG — Source de vérité unique
+# IMPORT CONFIG 
 # ------------------------------------------------------------
 from config import (
     ROOT_DIR, DATA_DIR, SUIVI_DIR, OUTPUT_DIR, OPTIM_DIR,
     NUTRITION_DB, RECETTES_DB,
     CIQUAL_LOCAL, SUIVI_POIDS_XLSX, EXCEL_CONFIG_PATH,
     SPOONACULAR_KEY, PILOTERR_API_KEY,
-    MAGASIN_DEFAUT, CACHE_PRIX_JOURS,
+    MAGASIN_FALLBACK, CACHE_PRIX_JOURS,
     NB_REPAS_SEMAINE, NB_REPAS_PAR_JOUR, NB_JOURS_SEMAINE,
     PROTEINES_MIN_PAR_KG, PROTEINES_MAX_PAR_KG,
     LIPIDES_MIN_PAR_KG, BUDGET_JOURNALIER_MAX,
@@ -27,27 +27,48 @@ from config import (
 )
 
 # ------------------------------------------------------------
+# IMPORTS MODULES 
+# ------------------------------------------------------------
+from optimisation.excel.reader            import lire_config_athlete
+from optimisation.engine.calories         import calcul_calories_semaine
+from optimisation.engine.macros           import calcul_macros_semaine
+from optimisation.planning.semaine        import construire_planning_semaine
+from optimisation.engine.recipe_optimizer import (
+    generer_semaine_recettes,
+    afficher_semaine_recettes,
+)
+from optimisation.excel.writer            import ecrire_resultats_excel
+from suivi.prix.pipeline_prix             import lancer_pipeline_prix
+from suivi.tracking.poids                 import analyser_poids, afficher_analyse_poids
+from suivi.tracking.adaptation            import adapter_parametres
+from create_db.database.connection        import get_connection
+from create_db.database.create_tables     import create_tables
+from create_db.database.categories        import insert_categories
+from create_db.importers.ciqual_parser    import parse_ciqual
+from create_db.importers.inserter         import insert_aliments, print_repartition
+from create_db.engine.scoring             import update_scores
+from create_db.recettes.create_recettes_db   import create_recettes_tables
+from create_db.recettes.spoonacular_importer import importer_toutes_recettes
+
+# ------------------------------------------------------------
 # LOGGING GLOBAL
 # ------------------------------------------------------------
 logging.basicConfig(
-    level   = logging.INFO,
-    format  = "%(asctime)s [%(levelname)s] %(message)s",
-    handlers= [logging.StreamHandler()]
+    level    = logging.INFO,
+    format   = "%(asctime)s [%(levelname)s] %(message)s",
+    handlers = [logging.StreamHandler()]
 )
 log = logging.getLogger(__name__)
+
 
 # ============================================================
 # COMMANDES
 # ============================================================
 
 # ------------------------------------------------------------
-# 1. INIT-DB — Création base alimentaire (CIQUAL)
+# 1. INIT-DB
 # ------------------------------------------------------------
 def cmd_init_db(force: bool = False):
-    """
-    Crée et peuple nutrition.db depuis le fichier CIQUAL.
-    Skip si déjà existante sauf si --force.
-    """
     if NUTRITION_DB.exists() and not force:
         log.info(f"[SKIP] {NUTRITION_DB.name} déjà existante.")
         log.info("       Utilisez --force pour recréer.")
@@ -63,13 +84,6 @@ def cmd_init_db(force: bool = False):
         log.error(f"Fichier CIQUAL introuvable : {CIQUAL_LOCAL}")
         log.info(f"Placez le fichier dans : {DATA_DIR}")
         return
-
-    from create_db.database.connection     import get_connection
-    from create_db.database.create_tables  import create_tables
-    from create_db.database.categories     import insert_categories
-    from create_db.importers.ciqual_parser import parse_ciqual
-    from create_db.importers.inserter      import insert_aliments, print_repartition
-    from create_db.engine.scoring          import update_scores
 
     conn = get_connection()
     create_tables(conn)
@@ -91,13 +105,9 @@ def cmd_init_db(force: bool = False):
 
 
 # ------------------------------------------------------------
-# 2. IMPORT-RECETTES — Import depuis Spoonacular
+# 2. IMPORT-RECETTES
 # ------------------------------------------------------------
 def cmd_import_recettes(force: bool = False):
-    """
-    Crée et peuple recettes.db depuis Spoonacular.
-    Skip si déjà peuplée sauf si --force.
-    """
     if RECETTES_DB.exists() and not force:
         conn_check = sqlite3.connect(RECETTES_DB)
         cursor     = conn_check.cursor()
@@ -133,10 +143,6 @@ def cmd_import_recettes(force: bool = False):
 
     conn = sqlite3.connect(RECETTES_DB)
     conn.row_factory = sqlite3.Row
-
-    from create_db.recettes.create_recettes_db   import create_recettes_tables
-    from create_db.recettes.spoonacular_importer import importer_toutes_recettes
-
     create_recettes_tables(conn)
     importer_toutes_recettes(conn)
     conn.close()
@@ -145,12 +151,9 @@ def cmd_import_recettes(force: bool = False):
 
 
 # ------------------------------------------------------------
-# 3. OPTIMISE — Génération du planning hebdomadaire
+# 3. OPTIMISE
 # ------------------------------------------------------------
 def cmd_optimise():
-    """
-    Lance le moteur PuLP et génère NB_REPAS_SEMAINE repas.
-    """
     log.info("=" * 60)
     log.info("  OPTIMISATION PLANNING HEBDOMADAIRE")
     log.info(f"  Config athlète  : {EXCEL_CONFIG_PATH.name}")
@@ -176,30 +179,47 @@ def cmd_optimise():
         log.info("Lancez d'abord : python main.py import-recettes")
         return
 
-    from engine.recipe_optimizer import optimiser
-    optimiser()
+    log.info("[1/5] Lecture configuration athlète...")
+    config = lire_config_athlete()
 
-    log.info(f"Planning généré dans {OUTPUT_DIR}")
+    log.info("[2/5] Calcul calories...")
+    planning_calorique = calcul_calories_semaine(config)
+
+    log.info("[3/5] Calcul macros...")
+    planning_macros = calcul_macros_semaine(config, planning_calorique)
+
+    log.info("[4/5] Construction planning semaine...")
+    planning_semaine = construire_planning_semaine(
+        config, planning_calorique, planning_macros
+    )
+
+    log.info("[5/5] Génération des repas...")
+    resultats = generer_semaine_recettes(config, planning_semaine)
+
+    afficher_semaine_recettes(resultats)
+
+    log.info("Export Excel...")
+    ecrire_resultats_excel(resultats, config, planning_semaine)
+
+    ok          = sum(1 for r in resultats if r["statut"] == "ok")
+    non_trouves = sum(1 for r in resultats if r["statut"] != "ok")
+    log.info(f"Planning généré — {ok}/{len(resultats)} recettes trouvées")
+    if non_trouves > 0:
+        log.warning(f"   {non_trouves} recettes non trouvées")
+    log.info(f"Export dans {OUTPUT_DIR}")
 
 
 # ------------------------------------------------------------
-# 4. PRIX — Mise à jour des prix depuis le magasin
+# 4. PRIX
 # ------------------------------------------------------------
 def cmd_prix(magasin: str = None):
-    """
-    Récupère les prix via Piloterr API.
-    Magasin lu depuis Excel si non forcé en CLI.
-    """
-    # Lire le magasin depuis Excel si non spécifié en CLI
     if magasin is None:
         try:
-            from optimisation.excel.reader import lire_config_athlete
             config  = lire_config_athlete()
-            magasin = config["profil"]["magasin"]
+            magasin = config["budget"]["magasin"]
             log.info(f"  Magasin lu depuis Excel : {magasin.upper()}")
         except Exception as e:
             log.warning(f"Impossible de lire le magasin depuis Excel : {e}")
-            log.warning(f"Fallback : {MAGASIN_FALLBACK.upper()}")
             magasin = MAGASIN_FALLBACK
 
     log.info("=" * 60)
@@ -223,20 +243,14 @@ def cmd_prix(magasin: str = None):
         log.info(f"Placez le fichier dans : {OPTIM_DIR}")
         return
 
-    from suivi.prix.pipeline_prix import lancer_pipeline_prix
     lancer_pipeline_prix(magasin=magasin)
-
     log.info(f"Prix mis à jour pour {magasin.upper()}.")
 
 
-
 # ------------------------------------------------------------
-# 5. SUIVI — Suivi poids + adaptation nutritionnelle
+# 5. SUIVI
 # ------------------------------------------------------------
 def cmd_suivi(simulation: bool = False):
-    """
-    Analyse le suivi poids et adapte les paramètres.
-    """
     log.info("=" * 60)
     log.info("  SUIVI DYNAMIQUE HEBDOMADAIRE")
     log.info(f"  {datetime.now().strftime('%A %d/%m/%Y %H:%M')}")
@@ -262,15 +276,11 @@ def cmd_suivi(simulation: bool = False):
             return rapport
 
         log.info("[1/2] Lecture configuration athlète...")
-        from excel.reader import lire_config_athlete
         config = lire_config_athlete()
         log.info(f"      Athlète  : {config['profil']['nom']}")
         log.info(f"      Objectif : {config['profil']['objectif']}")
 
         log.info("[2/2] Analyse poids et adaptation...")
-        from suivi.tracking.poids      import analyser_poids, afficher_analyse_poids
-        from suivi.tracking.adaptation import adapter_parametres
-
         analyse = analyser_poids(config)
         rapport["analyse_poids"] = {
             "statut"    : analyse["statut"],
@@ -318,25 +328,21 @@ def cmd_suivi(simulation: bool = False):
 # 6. RUN — Pipeline complet hebdomadaire
 # ------------------------------------------------------------
 def cmd_run(magasin: str = None, simulation: bool = False):
-    """
-    Pipeline complet — magasin lu depuis Excel.
-    """
-    from excel.reader import lire_config_athlete
-    config = lire_config_athlete()
+    try:
+        config  = lire_config_athlete()
+        magasin = magasin or config["budget"]["magasin"]
+    except Exception as e:
+        log.warning(f"Impossible de lire Excel : {e}")
+        magasin = magasin or MAGASIN_FALLBACK
 
-    # CLI override possible, sinon Excel
-    magasin = magasin or config["profil"]["magasin"]
-
-    log.info(f"  Magasin : {magasin.upper()} (depuis Excel)")
     log.info("=" * 60)
-    log.info("PIPELINE COMPLET HEBDOMADAIRE")
+    log.info("  PIPELINE COMPLET HEBDOMADAIRE")
     log.info(f"  {datetime.now().strftime('%A %d/%m/%Y %H:%M')}")
     log.info(f"  Magasin  : {magasin.upper()}")
     log.info(f"  Mode     : {'SIMULATION' if simulation else 'PRODUCTION'}")
     log.info(f"  Output   : {OUTPUT_DIR}")
     log.info("=" * 60)
 
-    # Vérifications préalables
     if not NUTRITION_DB.exists():
         log.error(f"{NUTRITION_DB.name} introuvable.")
         log.info("Lancez d'abord : python main.py init-db")
@@ -361,7 +367,7 @@ def cmd_run(magasin: str = None, simulation: bool = False):
     log.info("\n[ÉTAPE 3/3] Optimisation + export Excel...")
     cmd_optimise()
 
-    log.info(f"\n Pipeline terminé — Rapport dans {OUTPUT_DIR}")
+    log.info(f"\nPipeline terminé — Rapport dans {OUTPUT_DIR}")
 
 
 # ============================================================
@@ -377,7 +383,6 @@ Chemins actifs (config.py) :
   recettes.db    : {RECETTES_DB}
   athlete_config : {EXCEL_CONFIG_PATH}
   output         : {OUTPUT_DIR}
-  logs           : {LOGS_DIR}
         """
     )
 
@@ -424,8 +429,8 @@ Chemins actifs (config.py) :
     p_prix.add_argument(
         "--magasin",
         choices = ["leclerc", "auchan"],
-        default = MAGASIN_DEFAUT,
-        help    = f"Magasin cible (défaut: {MAGASIN_DEFAUT})"
+        default = None,
+        help    = "Override magasin Excel"
     )
 
     # --- suivi ---
@@ -448,8 +453,8 @@ Chemins actifs (config.py) :
     p_run.add_argument(
         "--magasin",
         choices = ["leclerc", "auchan"],
-        default = MAGASIN_DEFAUT,
-        help    = f"Magasin cible (défaut: {MAGASIN_DEFAUT})"
+        default = None,
+        help    = "Override magasin Excel"
     )
     p_run.add_argument(
         "--simulation",
