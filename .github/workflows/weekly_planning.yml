@@ -27,6 +27,14 @@ on:
         options:
           - "false"
           - "true"
+      magasin:
+        description: "Magasin pour recuperer les prix"
+        required: false
+        default: "leclerc"
+        type: choice
+        options:
+          - "leclerc"
+          - "auchan"
 
 jobs:
   generer_planning:
@@ -60,55 +68,53 @@ jobs:
       - name: Installation des dependances
         run: |
           pip install --upgrade pip
-          pip install \
-            pandas \
-            numpy \
-            openpyxl \
-            pulp \
-            requests \
-            xlrd
+          pip install -r requirements.txt
 
       # ----------------------------------------------------------
-      # 4. Configuration des secrets
-      # A configurer dans GitHub :
-      #   Settings -> Secrets -> Actions -> New repository secret
-      #   SPOONACULAR_KEY = votre_cle_api
+      # 4. Configuration des secrets et variables
       # ----------------------------------------------------------
-      - name: Configuration des secrets
+      - name: Configuration des variables
         run: |
-          echo "SPOONACULAR_KEY=${{ secrets.SPOONACULAR_KEY }}" >> $GITHUB_ENV
-          echo "PYTHONPATH=${{ github.workspace }}"             >> $GITHUB_ENV
+          echo "SPOONACULAR_KEY=${{ secrets.SPOONACULAR_KEY }}"   >> $GITHUB_ENV
+          echo "PILOTERR_API_KEY=${{ secrets.PILOTERR_API_KEY }}" >> $GITHUB_ENV
+          echo "PYTHONPATH=${{ github.workspace }}"               >> $GITHUB_ENV
 
       # ----------------------------------------------------------
-      # 5. Verification et creation des bases de donnees
+      # 5. Verification des bases de donnees
       # ----------------------------------------------------------
       - name: Verification base nutritionnelle
         run: |
           if [ ! -f "create_db/data/nutrition.db" ]; then
             echo "[INFO] nutrition.db absent — creation en cours..."
-            python create_db/main.py
+            python main.py init-db
           else
             echo "[OK] nutrition.db present"
           fi
+        env:
+          PYTHONPATH: ${{ github.workspace }}
 
       - name: Verification base recettes
         run: |
           if [ ! -f "create_db/data/recettes.db" ]; then
             echo "[INFO] recettes.db absent — import Spoonacular..."
-            python create_db/recettes/main_recettes.py || \
+            python main.py import-recettes || \
               echo "[WARN] Import Spoonacular echoue — recettes.db vide"
           else
             echo "[OK] recettes.db present"
           fi
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          SPOONACULAR_KEY: ${{ secrets.SPOONACULAR_KEY }}
 
       - name: Verification config athlete
         run: |
-          if [ ! -f "optimisation/data/athlete_config.xlsx" ]; then
-            echo "[ERREUR] athlete_config.xlsx introuvable"
+          if [ ! -f "optimisation/data/athlete_config.xlsx" ] && \
+             [ ! -f "optimisation/data/athlete_config.xlsm" ]; then
+            echo "[ERREUR] athlete_config introuvable"
             echo "Ce fichier doit etre present dans le depot."
             exit 1
           else
-            echo "[OK] athlete_config.xlsx present"
+            echo "[OK] athlete_config present"
           fi
 
       # ----------------------------------------------------------
@@ -116,9 +122,19 @@ jobs:
       # ----------------------------------------------------------
       - name: Generation du planning
         run: |
-          python scripts/run_weekly.py
+          MAGASIN=${{ github.event.inputs.magasin || 'leclerc' }}
+          SIMULATION=${{ github.event.inputs.mode_simulation || 'false' }}
+
+          if [ "$SIMULATION" = "true" ]; then
+            echo "[INFO] Mode simulation active"
+            python main.py run --magasin $MAGASIN --simulation
+          else
+            python main.py run --magasin $MAGASIN
+          fi
         env:
-          PYTHONPATH: ${{ github.workspace }}
+          PYTHONPATH:      ${{ github.workspace }}
+          SPOONACULAR_KEY: ${{ secrets.SPOONACULAR_KEY }}
+          PILOTERR_API_KEY: ${{ secrets.PILOTERR_API_KEY }}
 
       # ----------------------------------------------------------
       # 7. Commit et push des resultats sur main
@@ -129,10 +145,10 @@ jobs:
           git config --global user.email "actions@github.com"
 
           # Ajouter les fichiers modifies
-          git add optimisation/data/athlete_config.xlsx
-          git add create_db/data/nutrition.db   || true
-          git add create_db/data/recettes.db    || true
-          git add logs/                          || true
+          git add optimisation/data/athlete_config.xlsx || true
+          git add optimisation/data/athlete_config.xlsm || true
+          git add output/*.xlsx                         || true
+          git add logs/                                 || true
 
           # Commiter uniquement si des changements existent
           if git diff --staged --quiet; then
@@ -147,16 +163,14 @@ jobs:
 
       # ----------------------------------------------------------
       # 8. Upload des artefacts (logs + Excel)
-      # Disponibles dans l onglet Actions de GitHub
-      # pendant 30 jours
       # ----------------------------------------------------------
       - name: Upload artefacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: planning-${{ github.run_number }}
+          name: planning-semaine-${{ github.run_number }}
           path: |
-            optimisation/data/athlete_config.xlsx
+            output/*.xlsx
             logs/
           retention-days: 30
 
@@ -173,6 +187,8 @@ jobs:
           echo "  Run       : ${{ github.run_number }}"
           echo "  Branche   : ${{ github.ref_name }}"
           echo "  Declenche : ${{ github.event_name }}"
+          echo "  Magasin   : ${{ github.event.inputs.magasin || 'leclerc' }}"
+          echo "  Simulation: ${{ github.event.inputs.mode_simulation || 'false' }}"
           echo "  Date      : $(date +'%d/%m/%Y %H:%M UTC')"
           echo "=================================================="
 
