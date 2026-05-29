@@ -4,14 +4,19 @@
 # ============================================================
 
 import sys
-import os
 import subprocess
 import argparse
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.resolve()))
 sys.dont_write_bytecode = True
 
-from config import MAGASIN_DEFAUT, LOGS_DIR, ROOT_DIR
+# ------------------------------------------------------------
+# RACINE DU PROJET
+# scripts/scheduler.py → scripts/ → NUTRITION/
+# ------------------------------------------------------------
+ROOT_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT_DIR))
+
+from config import MAGASIN_FALLBACK, ROOT_DIR
 
 # ------------------------------------------------------------
 # CONSTANTES
@@ -43,7 +48,8 @@ def installer_tache():
     print(f"      Script  : {SCRIPT_PATH}")
     print(f"      Python  : {PYTHON_PATH}")
     print(f"      Horaire : Dimanche à {HEURE}")
-    print(f"      Magasin : {MAGASIN_DEFAUT.upper()}")
+    print(f"      Magasin : {MAGASIN_FALLBACK.upper()} (fallback)")
+    print(f"      Note    : Le magasin réel sera lu depuis Excel")
 
     result = subprocess.run(commande, capture_output=True, text=True)
 
@@ -81,20 +87,23 @@ def verifier_tache():
 
 def lancer_maintenant():
     """
-    Lance directement main.py run
-    sans passer par run_weekly.py
+    Lance directement main.py run.
+    Le magasin sera lu automatiquement depuis Excel.
     """
     print(f"[...] Lancement immédiat via main.py...")
+    print(f"      Magasin : lu depuis athlete_config.xlsm")
+
     result = subprocess.run(
         [
             PYTHON_PATH,
             str(MAIN_PATH),
             "run",
-            "--magasin", MAGASIN_DEFAUT,
+            # Pas de --magasin → lu depuis Excel automatiquement
         ],
         capture_output = False,
         cwd            = str(ROOT_DIR),
     )
+
     if result.returncode == 0:
         print(f"[OK] Exécution terminée.")
     else:

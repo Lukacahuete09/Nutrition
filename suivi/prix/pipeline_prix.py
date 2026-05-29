@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT_DIR))
 from config import (
     RECETTES_DB,
     NUTRITION_DB,
-    MAGASIN_DEFAUT,
+    MAGASIN_FALLBACK,
     NB_SEMAINES_HISTORIQUE_PRIX,
 )
 from suivi.prix.pricer  import Pricer
