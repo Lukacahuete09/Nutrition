@@ -1,0 +1,122 @@
+# ============================================================
+# .gitignore — Projet Nutrition Sportive
+# ============================================================
+
+# ------------------------------------------------------------
+# PYTHON
+# ------------------------------------------------------------
+# Bytecode et cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Environnements virtuels
+.venv/
+venv/
+ENV/
+env/
+.env
+
+# ------------------------------------------------------------
+# BASES DE DONNEES
+# ------------------------------------------------------------
+# La base nutrition est regeneree depuis CIQUAL
+create_db/data/nutrition.db
+
+# La base recettes est regeneree depuis Spoonacular
+create_db/data/recettes.db
+
+# Le fichier CIQUAL source (trop lourd pour Git)
+create_db/data/ciqual_2020.xls
+
+# ------------------------------------------------------------
+# FICHIERS EXCEL DE SORTIE (archives)
+# ------------------------------------------------------------
+# Les archives sont generees automatiquement
+optimisation/output/
+suivi/output/
+
+# ------------------------------------------------------------
+# LOGS
+# ------------------------------------------------------------
+logs/
+*.log
+
+# ------------------------------------------------------------
+# SECRETS ET CONFIGURATION SENSIBLE
+# ------------------------------------------------------------
+# Cles API (ne jamais commiter)
+.env
+secrets.py
+config_secret.py
+
+# ------------------------------------------------------------
+# FICHIERS TEMPORAIRES
+# ------------------------------------------------------------
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+~$*
+
+# Fichiers Excel temporaires generes par Excel
+~$athlete_config.xlsm
+~$athlete_config.xlsx
+
+# ------------------------------------------------------------
+# SYSTEME D EXPLOITATION
+# ------------------------------------------------------------
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# MacOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+
+# ------------------------------------------------------------
+# EDITEURS ET IDEs
+# ------------------------------------------------------------
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# ------------------------------------------------------------
+# FICHIERS A CONSERVER DANS GIT
+# ------------------------------------------------------------

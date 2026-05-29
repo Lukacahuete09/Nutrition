@@ -299,23 +299,48 @@ def _valider_profil(profil: dict) -> list:
 
     return erreurs
 
+# ------------------------------------------------------------
+# LECTURE FEUILLE RECETTES_EXCLUES
+# Structure :
+#   Ligne 3  : header
+#   Lignes 4+ : recettes exclues
+#     col1 = Nom recette (nom_fr ou nom_en)
+#     col2 = Raison
+#     col3 = Date ajout
+# ------------------------------------------------------------
+def _read_recettes_exclues(ws) -> list:
+    """
+    Lit la liste des recettes que l athlete
+    ne souhaite plus voir proposees.
+    """
+    recettes_exclues = []
 
+    for row in range(4, ws.max_row + 1):
+        nom = _get_str(ws, row, 1)
+        if nom:
+            recettes_exclues.append({
+                "nom"        : nom,
+                "raison"     : _get_str(ws, row, 2),
+                "date_ajout" : _get_str(ws, row, 3),
+            })
+
+    return recettes_exclues
 # ------------------------------------------------------------
 # FONCTION PRINCIPALE
 # ------------------------------------------------------------
 def lire_config_athlete() -> dict:
     """
-    Lit l integralite du fichier athlete_config.xlsx
+    Lit l integralite du fichier athlete_config.xlsm
     et retourne un dictionnaire structure utilisable
     par tous les modules du moteur d optimisation.
     """
     # Gestion du path selon mode d execution
-    if os.path.exists("optimisation/data/athlete_config.xlsx"):
-        config_path = "optimisation/data/athlete_config.xlsx"
+    if os.path.exists("optimisation/data/athlete_config.xlsm"):
+        config_path = "optimisation/data/athlete_config.xlsm"
     else:
         config_path = os.path.join(
             os.path.dirname(__file__),
-            "..", "data", "athlete_config.xlsx"
+            "..", "data", "athlete_config.xlsm"
         )
         config_path = os.path.abspath(config_path)
 
@@ -336,6 +361,13 @@ def lire_config_athlete() -> dict:
     aliments_exclus = _read_aliments_exclus(wb["ALIMENTS_EXCLUS"])
     structure_repas = _read_structure_repas(wb["STRUCTURE_REPAS"])
 
+    # Lecture recettes exclues
+    # La feuille est optionnelle -> creee au premier "Changer"
+    if "RECETTES_EXCLUES" in wb.sheetnames:
+        recettes_exclues = _read_recettes_exclues(wb["RECETTES_EXCLUES"])
+    else:
+        recettes_exclues = []
+
     wb.close()
 
     # Validation
@@ -343,42 +375,27 @@ def lire_config_athlete() -> dict:
     if erreurs:
         for e in erreurs:
             print(e)
-        raise ValueError(
-            "[ERREUR] Configuration incomplete. "
-            "Corrigez les erreurs dans athlete_config.xlsx."
-        )
+        raise ValueError("[ERREUR] Configuration incomplete.")
 
     config = {
-        "profil"          : profil,
-        "planning"        : planning,
-        "nutrition"       : nutrition,
-        "budget"          : budget,
-        "aliments_exclus" : aliments_exclus,
-        "structure_repas" : structure_repas,
+        "profil"           : profil,
+        "planning"         : planning,
+        "nutrition"        : nutrition,
+        "budget"           : budget,
+        "aliments_exclus"  : aliments_exclus,
+        "structure_repas"  : structure_repas,
+        "recettes_exclues" : recettes_exclues,   # nouveau
     }
 
     # Affichage recapitulatif
     print(f"[OK] Configuration chargee pour : {profil.get('nom', 'Athlete')}")
-    print(f"     Poids actuel  : {profil['poids_actuel_kg']} kg")
-    print(f"     Poids cible   : {profil['poids_cible_kg']} kg")
-    print(f"     Sport         : {profil['sport']}")
-    print(f"     Seances/sem   : {len([j for j in planning if j['seance'].lower() != 'repos'])}")
-    print(f"     Budget hebdo  : {budget['budget_hebdo_max']} euros")
+    print(f"     Poids actuel    : {profil['poids_actuel_kg']} kg")
+    print(f"     Poids cible     : {profil['poids_cible_kg']} kg")
+    print(f"     Sport           : {profil['sport']}")
+    print(f"     Seances/sem     : {len([j for j in planning if j['seance'].lower() != 'repos'])}")
+    print(f"     Budget hebdo    : {budget['budget_hebdo_max']} euros")
     print(f"     Aliments exclus : {len(aliments_exclus)}")
-    print(f"     Structure semaine :")
-    print(f"       Petit-dej : {structure_repas['semaine']['petit_dej']['nb_recettes']} recette(s)"
-          f" — batch : {structure_repas['semaine']['petit_dej']['batch_cooking']}")
-    print(f"       Dejeuner  : {structure_repas['semaine']['dejeuner']['nb_recettes']} recette(s)"
-          f" — batch : {structure_repas['semaine']['dejeuner']['batch_cooking']}")
-    print(f"       Diner     : {structure_repas['semaine']['diner']['nb_recettes']} recette(s)"
-          f" — batch : {structure_repas['semaine']['diner']['batch_cooking']}")
-    print(f"     Structure week-end :")
-    print(f"       Petit-dej : {structure_repas['weekend']['petit_dej']['nb_recettes']} recette(s)"
-          f" — batch : {structure_repas['weekend']['petit_dej']['batch_cooking']}")
-    print(f"       Dejeuner  : {structure_repas['weekend']['dejeuner']['nb_recettes']} recette(s)"
-          f" — batch : {structure_repas['weekend']['dejeuner']['batch_cooking']}")
-    print(f"       Diner     : {structure_repas['weekend']['diner']['nb_recettes']} recette(s)"
-          f" — batch : {structure_repas['weekend']['diner']['batch_cooking']}")
+    print(f"     Recettes exclues: {len(recettes_exclues)}")
 
     return config
 

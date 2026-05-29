@@ -3,7 +3,7 @@
 # scripts/run_weekly.py
 #
 # Lance tous les dimanches a 15h par le scheduler Windows
-# Lit la config depuis athlete_config.xlsx
+# Lit la config depuis athlete_config.xlsm
 # Ecrit les resultats dans les memes feuilles Excel
 # ============================================================
 

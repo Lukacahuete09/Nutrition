@@ -3,7 +3,7 @@
 # suivi/tracking/adaptation.py
 #
 # Analyse le statut de poids hebdomadaire et ajuste
-# automatiquement les parametres dans athlete_config.xlsx :
+# automatiquement les parametres dans athlete_config.xlsm :
 #   - Deficit ou surplus calorique
 #   - Glucides selon le type de seance
 #
@@ -37,7 +37,7 @@ from config import EXCEL_CONFIG_PATH, get_parametres_objectif
 def _lire_parametres_actuels(ws_nutrition) -> dict:
     """
     Lit les parametres nutritionnels actuels
-    depuis la feuille NUTRITION de athlete_config.xlsx.
+    depuis la feuille NUTRITION de athlete_config.xlsm.
 
     Structure attendue (identique a reader.py) :
       Ligne 4  : Proteines minimum
@@ -333,7 +333,7 @@ def _ecrire_ajustements_excel(
 ) -> None:
     """
     Ecrit les nouveaux parametres dans la feuille NUTRITION
-    de athlete_config.xlsx.
+    de athlete_config.xlsm.
 
     Ne modifie que les cellules de valeurs numeriques.
     Ne touche jamais aux labels ni aux autres feuilles.
@@ -344,7 +344,7 @@ def _ecrire_ajustements_excel(
             pass
     except PermissionError:
         raise PermissionError(
-            f"[ERREUR] Fermez athlete_config.xlsx dans Excel avant "
+            f"[ERREUR] Fermez athlete_config.xlsm dans Excel avant "
             f"de lancer l adaptation automatique."
         )
 
@@ -376,7 +376,7 @@ def _ecrire_ajustements_excel(
 
     wb.save(EXCEL_CONFIG_PATH)
     wb.close()
-    print(f"[OK] Parametres mis a jour dans athlete_config.xlsx")
+    print(f"[OK] Parametres mis a jour dans m")
 
 
 # ------------------------------------------------------------

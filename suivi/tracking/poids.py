@@ -2,7 +2,7 @@
 # SUIVI DU POIDS HEBDOMADAIRE
 # suivi/tracking/poids.py
 #
-# Lit l historique du poids depuis athlete_config.xlsx
+# Lit l historique du poids depuis m
 # Calcule les tendances et projections
 # Determine si l objectif est en bonne voie
 #
@@ -33,7 +33,7 @@ from config import (
 # ------------------------------------------------------------
 def lire_historique_poids() -> list:
     """
-    Lit la feuille SUIVI_POIDS dans athlete_config.xlsx.
+    Lit la feuille SUIVI_POIDS dans athlete_config.xlsm.
 
     Format attendu de la feuille SUIVI_POIDS :
       Ligne 1 : Titre
@@ -65,7 +65,7 @@ def lire_historique_poids() -> list:
 
     if "SUIVI_POIDS" not in wb.sheetnames:
         wb.close()
-        print("[WARN] Feuille 'SUIVI_POIDS' introuvable dans athlete_config.xlsx")
+        print("[WARN] Feuille 'SUIVI_POIDS' introuvable dans athlete_config.xlsm")
         print("[INFO] Creez la feuille via : python suivi/tracking/create_suivi_poids.py")
         return []
 
@@ -411,7 +411,7 @@ def afficher_analyse_poids(analyse: dict) -> None:
 
     if analyse["statut"] == "pas_de_donnees":
         print("  Aucun releve de poids disponible.")
-        print("  Renseignez la feuille SUIVI_POIDS dans athlete_config.xlsx")
+        print("  Renseignez la feuille SUIVI_POIDS dans athlete_config.xlsm")
         print("=" * 65)
         return
 
